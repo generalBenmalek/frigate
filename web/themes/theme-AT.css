@@ -1,0 +1,69 @@
+@layer base {
+  .theme-AT.light {
+    --background: 220 16% 96%;
+    --background-alt: 215 14% 92%;
+    --foreground: 222 20% 16%;
+    --muted: 215 14% 80%;
+    --muted-foreground: 222 20% 16%;
+    --popover: 220 16% 96%;
+    --popover-foreground: 222 20% 16%;
+    --border: 222 20% 70%;
+    --input: 222 20% 70%;
+    --card: 220 16% 96%;
+    --card-foreground: 222 20% 16%;
+    /* Official AT Blue #1F2359 */
+    --primary: 223 44% 19%;
+    --primary-variant: 223 44% 40%;
+    --primary-foreground: 220 16% 96%;
+    /* Official AT Green #088141 */
+    --secondary: 150 93% 26%;
+    --secondary-foreground: 220 16% 96%;
+    --secondary-highlight: 150 93% 35%;
+    --neutral: 0 0% 45.1%;
+    --neutral_variant: 0 0% 32.2%;
+    /* Use green for accent */
+    --accent: 150 93% 26%;
+    --accent-foreground: 220 16% 96%;
+    --destructive: 0 80% 50%;
+    --destructive-foreground: 222 20% 16%;
+    --warning: 45 100% 51%;
+    --warning-foreground: 222 20% 16%;
+    --ring: 223 44% 19%;
+    --selected: 223 44% 19%;
+    --selected-foreground: 220 16% 96%;
+  }
+
+  .theme-AT.dark {
+    --background: 220 16% 16%;
+    --background-alt: 215 14% 12%;
+    --foreground: 222 20% 96%;
+    --muted: 215 14% 25%;
+    --muted-foreground: 222 20% 66%;
+    --popover: 220 16% 16%;
+    --popover-foreground: 222 20% 66%;
+    --border: 222 20% 40%;
+    --input: 222 20% 40%;
+    --card: 220 16% 16%;
+    --card-foreground: 222 20% 96%;
+    /* Official AT Blue #1F2359 */
+    --primary: 223 44% 60%;
+    --primary-variant: 223 44% 45%;
+    --primary-foreground: 220 16% 16%;
+    /* Official AT Green #088141 */
+    --secondary: 150 93% 40%;
+    --secondary-foreground: 220 16% 16%;
+    --secondary-highlight: 150 93% 50%;
+    --neutral: 0 0% 45.1%;
+    --neutral_variant: 0 0% 32.2%;
+    /* Use green for accent */
+    --accent: 150 93% 40%;
+    --accent-foreground: 220 16% 16%;
+    --destructive: 0 80% 50%;
+    --destructive-foreground: 222 20% 96%;
+    --warning: 45 100% 51%;
+    --warning-foreground: 222 20% 96%;
+    --ring: 223 44% 40%;
+    --selected: 223 44% 45%;
+    --selected-foreground: 220 16% 16%;
+  }
+}

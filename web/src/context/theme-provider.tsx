@@ -8,7 +8,8 @@ type ColorScheme =
   | "theme-nord"
   | "theme-red"
   | "theme-high-contrast"
-  | "theme-default";
+  | "theme-default"
+  | "theme-AT";
 
 // eslint-disable-next-line react-refresh/only-export-components
 export const colorSchemes: ColorScheme[] = [
@@ -18,12 +19,16 @@ export const colorSchemes: ColorScheme[] = [
   "theme-red",
   "theme-high-contrast",
   "theme-default",
+  "theme-AT",
 ];
 
 // Helper function to generate friendly color scheme names
 // eslint-disable-next-line react-refresh/only-export-components
 export const friendlyColorSchemeName = (className: string): string => {
-  const words = className.split("-").slice(1); // Exclude the first word (e.g., 'theme')
+  const words = className
+    .split("-")
+    .slice(1)
+    .map((word) => word.toLowerCase());
   return "menu.theme." + words.join("");
 };
 

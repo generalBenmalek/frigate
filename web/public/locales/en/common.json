@@ -238,7 +238,8 @@
       "nord": "Nord",
       "red": "Red",
       "highcontrast": "High Contrast",
-      "default": "Default"
+      "default": "Default",
+      "at": "AT"
     },
     "help": "Help",
     "documentation": {
