@@ -1,0 +1,78 @@
+{
+  "documentTitle": "Employees and Groups - Frigate",
+  "title": "Employees and Groups",
+  "subtitle": "Manage employee and group records from one place.",
+  "tabs": {
+    "employees": "Employees",
+    "groups": "Groups"
+  },
+  "button": {
+    "addEmployee": "Add Employee",
+    "addGroup": "Add Group"
+  },
+  "employees": {
+    "title": "Employees",
+    "subtitle": "Create, edit, and remove employees.",
+    "table": {
+      "id": "ID",
+      "firstName": "First name",
+      "lastName": "Last name",
+      "group": "Group",
+      "actions": "Actions"
+    },
+    "empty": "No employees yet."
+  },
+  "groups": {
+    "title": "Groups",
+    "subtitle": "Create, edit, and remove groups.",
+    "table": {
+      "id": "ID",
+      "name": "Group name",
+      "actions": "Actions"
+    },
+    "empty": "No groups yet."
+  },
+  "groupDialog": {
+    "createTitle": "Create Group",
+    "editTitle": "Edit Group",
+    "id": "Group ID",
+    "name": "Group name"
+  },
+  "employeeDialog": {
+    "createTitle": "Create Employee",
+    "editTitle": "Edit Employee",
+    "id": "Employee ID",
+    "firstName": "First name",
+    "lastName": "Last name",
+    "group": "Group",
+    "groupPlaceholder": "Select a group",
+    "noGroups": "Create at least one group before adding employees."
+  },
+  "delete": {
+    "group": {
+      "title": "Delete Group",
+      "description": "Are you sure you want to delete {{name}}?"
+    },
+    "employee": {
+      "title": "Delete Employee",
+      "description": "Are you sure you want to delete {{name}}?"
+    }
+  },
+  "toast": {
+    "success": {
+      "createdGroup": "Successfully created group.",
+      "updatedGroup": "Successfully updated group.",
+      "deletedGroup": "Successfully deleted group.",
+      "createdEmployee": "Successfully created employee.",
+      "updatedEmployee": "Successfully updated employee.",
+      "deletedEmployee": "Successfully deleted employee."
+    },
+    "error": {
+      "loadGroupsFailed": "Failed to load groups.",
+      "loadEmployeesFailed": "Failed to load employees.",
+      "saveGroupFailed": "Failed to save group.",
+      "saveEmployeeFailed": "Failed to save employee.",
+      "deleteFailed": "Failed to delete record."
+    }
+  }
+}

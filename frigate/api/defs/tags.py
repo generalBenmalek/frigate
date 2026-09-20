@@ -9,6 +9,7 @@ class Tags(Enum):
     events = "Events"
     export = "Export"
     classification = "Classification"
+    organization = "Organization"
     logs = "Logs"
     media = "Media"
     motion_search = "Motion Search"

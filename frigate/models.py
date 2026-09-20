@@ -164,6 +164,24 @@ class User(Model):
         return [cam for cam in allowed if cam in all_camera_names]
 
 
+class Group(Model):
+    id = CharField(null=False, primary_key=True, max_length=30)
+    group_name = CharField(index=True, max_length=100)
+
+
+class Employee(Model):
+    id = CharField(null=False, primary_key=True, max_length=30)
+    first_name = CharField(max_length=100)
+    last_name = CharField(max_length=100)
+    group = ForeignKeyField(
+        Group,
+        backref="employees",
+        column_name="group_id",
+        on_delete="RESTRICT",
+        on_update="CASCADE",
+    )
+
+
 class Trigger(Model):
     camera = CharField(max_length=20)
     name = CharField()
