@@ -102,14 +102,14 @@ export default function OrganizationPage() {
     data: groups,
     mutate: refreshGroups,
     error: groupsError,
-  } = useSWR<GroupRecord[]>("organization/groups", {
+  } = useSWR<GroupRecord[]>("groups", {
     revalidateOnFocus: false,
   });
   const {
     data: employees,
     mutate: refreshEmployees,
     error: employeesError,
-  } = useSWR<EmployeeRecord[]>("organization/employees", {
+  } = useSWR<EmployeeRecord[]>("employees", {
     revalidateOnFocus: false,
   });
 
