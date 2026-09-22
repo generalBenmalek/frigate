@@ -9,6 +9,7 @@ class Tags(Enum):
     events = "Events"
     export = "Export"
     classification = "Classification"
+    access_controller = "Access Controller"
     organization = "Organization"
     logs = "Logs"
     media = "Media"

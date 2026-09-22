@@ -264,7 +264,7 @@
     "features": "Features",
     "faceLibrary": "Face Library",
     "classification": "Classification",
-    "organization": "Employees and groups",
+    "organization": "Access controllers",
     "chat": "Chat",
     "user": {
       "title": "User",
@@ -325,3 +325,4 @@
     "savedPlaceholder": "Saved — leave blank to keep current"
   }
 }
+

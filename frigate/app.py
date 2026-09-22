@@ -67,8 +67,7 @@ from frigate.models import (
     Timeline,
     Trigger,
     User,
-    Group,
-    Employee
+    AccessControl
 )
 from frigate.object_detection.base import ObjectDetectProcess
 from frigate.output.output import OutputProcess
@@ -284,8 +283,7 @@ class FrigateApp:
             Timeline,
             User,
             Trigger,
-            Group,
-            Employee,
+            AccessControl,
         ]
         self.db.bind(models)
 
@@ -727,3 +725,4 @@ class FrigateApp:
 
         _stop_logging()
         self.metrics_manager.shutdown()
+

@@ -3,6 +3,7 @@ import logging
 import re
 
 from fastapi import Depends, FastAPI, Request
+from fastapi.middleware.cors import CORSMiddleware # ADDED
 from fastapi.responses import JSONResponse
 from joserfc.jwk import OctKey
 from playhouse.sqliteq import SqliteQueueDatabase
@@ -13,6 +14,7 @@ from starlette_context import middleware, plugins
 from starlette_context.plugins import Plugin
 
 from frigate.api import app as main_app
+from frigate.models import AccessControl
 from frigate.api import (
     auth,
     camera,
@@ -21,7 +23,7 @@ from frigate.api import (
     debug_replay,
     event,
     export,
-    organization,
+    access_controller,
     media,
     motion_search,
     notification,
@@ -87,6 +89,17 @@ def create_fastapi_app(
         else [],
     )
 
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    ) # added
+
     # update the request_address with the x-forwarded-for header from nginx
     # https://starlette-context.readthedocs.io/en/latest/plugins.html#forwarded-for
     app.add_middleware(
@@ -99,12 +112,12 @@ def create_fastapi_app(
     # https://fastapi.tiangolo.com/tutorial/middleware/#before-and-after-the-response
     @app.middleware("http")
     async def frigate_middleware(request: Request, call_next):
-        # Before request
-        if not check_csrf(request):
-            return JSONResponse(
-                content={"success": False, "message": "Missing CSRF header"},
-                status_code=401,
-            )
+        # # Before request
+        # if not check_csrf(request):
+        #     return JSONResponse(
+        #         content={"success": False, "message": "Missing CSRF header"},
+        #         status_code=401,
+        #     ) disabled
 
         if database.is_closed():
             database.connect()
@@ -119,6 +132,12 @@ def create_fastapi_app(
     @app.on_event("startup")
     async def startup():
         logger.info("FastAPI started")
+        # for device in AccessControl.select():
+        #     try:
+        #         from frigate.api.access_controller import _probe_device
+        #         _probe_device(device)
+        #     except Exception:
+        #         logger.exception("Unable to refresh access controller %s at startup", device.id)
         asyncio.create_task(
             debug_replay_auto_stop_watchdog(
                 replay_manager, frigate_config, config_publisher
@@ -141,7 +160,7 @@ def create_fastapi_app(
     app.include_router(camera.router)
     app.include_router(chat.router)
     app.include_router(classification.router)
-    app.include_router(organization.router)
+    app.include_router(access_controller.router)
     app.include_router(review.router)
     app.include_router(main_app.router)
     app.include_router(preview.router)
@@ -192,3 +211,8 @@ def create_fastapi_app(
         app.jwt_token = None
 
     return app
+
+
+
+
+

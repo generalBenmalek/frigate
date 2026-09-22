@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Frigate API Test Console</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Frigate API Test Console</h1>
+      <p>Browser-based tester for the classification / face endpoints.</p>
+    </div>
+    <div class="top-actions">
+      <label class="inline-field">
+        <span>Auth mode</span>
+        <select id="authMode">
+          <option value="cookie">Browser cookies</option>
+          <option value="bearer">Bearer token</option>
+          <option value="none">No auth</option>
+        </select>
+      </label>
+      <label class="inline-field token-field hidden" id="tokenWrap">
+        <span>Bearer token</span>
+        <input id="token" type="password" placeholder="token" />
+      </label>
+    </div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar">
+      <div class="section-title">Endpoints</div>
+      <input id="filter" class="search" placeholder="Filter endpoints..." />
+      <div id="endpointList"></div>
+    </aside>
+
+    <section class="workspace">
+      <div class="panel endpoint-summary">
+        <div class="method-pill" id="methodPill">GET</div>
+        <div class="summary-main">
+          <div class="endpoint-path" id="endpointPath">/api/faces</div>
+          <div class="endpoint-desc" id="endpointDesc"></div>
+        </div>
+        <div class="actions">
+          <button id="sendBtn" class="primary">Send request</button>
+          <button id="clearBtn">Clear</button>
+        </div>
+      </div>
+
+      <div class="grid">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Request</h2>
+            <span id="authNote" class="muted"></span>
+          </div>
+
+          <div id="pathFields"></div>
+
+          <div id="querySection">
+            <div class="subhead">Query parameters</div>
+            <div id="queryFields"></div>
+          </div>
+
+          <div id="bodySection">
+            <div class="subhead">JSON body</div>
+            <textarea id="jsonBody" spellcheck="false" placeholder='{"key":"value"}'></textarea>
+          </div>
+
+          <div id="uploadSection">
+            <div class="subhead">File upload</div>
+            <input id="fileInput" type="file" />
+            <div id="uploadHint" class="hint"></div>
+          </div>
+
+          <div id="formFields"></div>
+
+          <details>
+            <summary>Equivalent cURL</summary>
+            <pre id="curlPreview"></pre>
+          </details>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Response</h2>
+            <div>
+              <span id="statusBadge" class="status neutral">Not sent</span>
+              <span id="timing" class="muted"></span>
+            </div>
+          </div>
+          <div id="errorBox" class="error-box hidden"></div>
+          <pre id="response" class="response">Send a request to see the response.</pre>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

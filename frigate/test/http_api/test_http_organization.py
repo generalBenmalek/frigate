@@ -1,22 +1,15 @@
-import os
-import tempfile
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from frigate.models import Employee, Group
+from frigate.models import AccessControl
 from frigate.test.http_api.base_http_test import AuthTestClient, BaseTestHttp
 
 
-class TestHttpOrganization(BaseTestHttp):
+class TestHttpAccessController(BaseTestHttp):
     def setUp(self):
-        super().setUp([Group, Employee])
-        self.app = super().create_app()
-        self.face_dir = tempfile.TemporaryDirectory()
-        face_patch = patch("frigate.api.organization.FACE_DIR", self.face_dir.name)
-        face_patch.start()
-        self.addCleanup(face_patch.stop)
-        self.addCleanup(self.face_dir.cleanup)
+        super().setUp([AccessControl])
+        self.app = self.create_app()
 
     def tearDown(self):
         self.app.dependency_overrides.clear()
@@ -24,76 +17,72 @@ class TestHttpOrganization(BaseTestHttp):
 
     def test_admin_only_endpoints_reject_anonymous_requests(self):
         with TestClient(self.app) as client:
-            response = client.get("/groups")
+            response = client.get("/access-controllers")
 
         assert response.status_code == 403
 
-    def test_group_and_employee_crud(self):
+    def test_access_controller_crud_and_event_history(self):
         with AuthTestClient(self.app) as client:
-            response = client.post(
-                "/groups",
-                json={"id": "ops", "group_name": "Operations"},
-            )
-            assert response.status_code == 200
+            with patch(
+                "frigate.api.access_controller.DahuaAccessController.get_system_info",
+                return_value={
+                    "deviceName": "Door-1",
+                    "deviceType": "Dahua",
+                    "serialNumber": "AC-001",
+                    "channelNumber": "2",
+                },
+            ):
+                response = client.post(
+                    "/access-controllers",
+                    json={
+                        "id": "ac_1",
+                        "name": "Door 1",
+                        "username": "admin",
+                        "password": "secret",
+                        "ip_address": "127.0.0.1",
+                        "port": 80,
+                    },
+                )
+                assert response.status_code == 200
+                body = response.json()
+                assert body["id"] == "ac_1"
+                assert body["name"] == "Door-1"
+                assert body["status"] == "online"
 
-            response = client.post(
-                "/employees",
+            response = client.get("/access-controllers")
+            assert response.status_code == 200
+            assert response.json()[0]["id"] == "ac_1"
+
+            response = client.put(
+                "/access-controllers/ac_1",
                 json={
-                    "id": "emp_1",
-                    "first_name": "Ada",
-                    "last_name": "Lovelace",
-                    "group_id": "ops",
+                    "ip_address": "10.0.0.2",
+                    "port": 81,
+                    "username": "",
+                    "password": "",
                 },
             )
             assert response.status_code == 200
-            assert os.path.isdir(os.path.join(self.face_dir.name, "emp_1"))
+            result = response.json()
+            assert result["ip_address"] == "10.0.0.2"
+            assert result["port"] == 81
 
-            response = client.get("/employees")
-            assert response.status_code == 200
-            assert response.json() == [
-                {
-                    "id": "emp_1",
-                    "first_name": "Ada",
-                    "last_name": "Lovelace",
-                    "group_id": "ops",
-                    "group_name": "Operations",
-                }
-            ]
+            with patch(
+                "frigate.api.access_controller.DahuaAccessController.get_access_records",
+                return_value=[
+                    {
+                        "Time": "2024-01-01 12:00:00",
+                        "CardNo": "123",
+                        "EventType": "AccessGranted",
+                    }
+                ],
+            ):
+                response = client.get("/access-controllers/events?device_id=ac_1")
+                assert response.status_code == 200
+                data = response.json()
+                assert len(data) == 1
+                assert data[0]["device_id"] == "ac_1"
+                assert data[0]["EventType"] == "AccessGranted"
 
-            response = client.put(
-                "/employees/emp_1",
-                json={
-                    "first_name": "Grace",
-                    "last_name": "Hopper",
-                    "group_id": "ops",
-                },
-            )
-            assert response.status_code == 200
-
-            response = client.put(
-                "/groups/ops",
-                json={"group_name": "Security"},
-            )
-            assert response.status_code == 200
-
-            response = client.get("/employees")
-            assert response.status_code == 200
-            assert response.json() == [
-                {
-                    "id": "emp_1",
-                    "first_name": "Grace",
-                    "last_name": "Hopper",
-                    "group_id": "ops",
-                    "group_name": "Security",
-                }
-            ]
-
-            response = client.delete("/groups/ops")
-            assert response.status_code == 400
-
-            response = client.delete("/employees/emp_1")
-            assert response.status_code == 200
-            assert not os.path.exists(os.path.join(self.face_dir.name, "emp_1"))
-
-            response = client.delete("/groups/ops")
+            response = client.delete("/access-controllers/ac_1")
             assert response.status_code == 200

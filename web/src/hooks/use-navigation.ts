@@ -105,10 +105,11 @@ export default function useNavigation(
           variant,
           icon: LuUserCog,
           title: "menu.organization",
-          url: "/organization",
+          url: "/access-controller",
           enabled: isDesktop && isAdmin,
         },
       ] as NavData[],
     [config?.face_recognition?.enabled, hasChatAgent, variant, isAdmin, isDesktop],
   );
 }
+

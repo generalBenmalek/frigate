@@ -164,23 +164,88 @@ class User(Model):
         return [cam for cam in allowed if cam in all_camera_names]
 
 
-class Group(Model):
-    id = CharField(null=False, primary_key=True, max_length=30)
-    group_name = CharField(index=True, max_length=100)
+# class Group(Model):
+#     id = CharField(null=False, primary_key=True, max_length=30)
+#     group_name = CharField(index=True, max_length=100)
+#
+#
+# class Employee(Model):
+#     id = CharField(null=False, primary_key=True, max_length=30)
+#     first_name = CharField(max_length=100)
+#     last_name = CharField(max_length=100)
+#     group = ForeignKeyField(
+#         Group,
+#         backref="employees",
+#         column_name="group_id",
+#         on_delete="RESTRICT",
+#         on_update="CASCADE",
+#     )
 
-
-class Employee(Model):
-    id = CharField(null=False, primary_key=True, max_length=30)
-    first_name = CharField(max_length=100)
-    last_name = CharField(max_length=100)
-    group = ForeignKeyField(
-        Group,
-        backref="employees",
-        column_name="group_id",
-        on_delete="RESTRICT",
-        on_update="CASCADE",
+class AccessControl(Model):
+    id = CharField(
+        null=False,
+        primary_key=True,
+        max_length=30,
     )
 
+    name = CharField(
+        null=False,
+        max_length=100,
+    )
+
+    ip_address = CharField(
+        null=False,
+        max_length=45,
+    )
+
+    type = CharField(
+        null=False,
+        max_length=50,
+    )
+
+    model = CharField(
+        null=False,
+        max_length=100,
+    )
+
+    port = IntegerField(
+        null=False,
+        default=37777,
+    )
+
+    channel_count = IntegerField(
+        null=False,
+        default=1,
+    )
+
+    serial_number = CharField(
+        null=False,
+        max_length=100,
+    )
+
+    username = CharField(
+        null=False,
+        max_length=100,
+    )
+
+    password = CharField(
+        null=False,
+        max_length=255,
+    )
+
+    status = CharField(
+        null=False,
+        default="offline",
+        max_length=20,
+    )
+
+    associated_camera = CharField(
+        null=True,
+        max_length=100,
+    )
+
+    class Meta:
+        table_name = "access_control"
 
 class Trigger(Model):
     camera = CharField(max_length=20)
