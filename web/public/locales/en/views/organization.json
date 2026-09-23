@@ -7,7 +7,16 @@
     "events": "Events"
   },
   "button": {
-    "addController": "Add Access Controller"
+    "addController": "Add Access Controller",
+    "connectAll": "Connect all",
+    "cards": "Cards",
+    "viewFootage": "View footage"
+  },
+  "status": {
+    "online": "Online",
+    "offline": "Offline",
+    "error": "Error",
+    "unknown": "Unknown"
   },
   "controllers": {
     "title": "Access Controllers",
@@ -21,6 +30,7 @@
       "model": "Model",
       "serial": "Serial",
       "status": "Status",
+      "lastChecked": "Last checked",
       "actions": "Actions"
     },
     "empty": "No access controllers configured yet."
@@ -36,6 +46,10 @@
       "device": "Device",
       "code": "Code",
       "action": "Action",
+      "card": "Card",
+      "people": "People seen",
+      "verification": "Verification",
+      "footage": "Footage",
       "details": "Details"
     }
   },
@@ -45,13 +59,37 @@
     "id": "Device ID",
     "name": "Display Name",
     "username": "Username",
+    "usernamePlaceholder": "admin",
     "password": "Password",
+    "passwordPlaceholder": "Optional",
     "ipAddress": "IP Address",
     "port": "Port",
     "nonAuth": "Leave username and password blank to use non-auth mode.",
+    "keepCredentials": "Leave credentials blank to keep the saved values.",
+    "clearCredentials": "Remove saved credentials",
     "associatedCamera": "Associated Camera",
     "associatedCameraPlaceholder": "Select a camera",
-    "noCamera": "No associated camera"
+    "noCamera": "No associated camera",
+    "secondsBefore": "Seconds before scan",
+    "secondsAfter": "Seconds after scan"
+  },
+  "verification": {
+    "pending": "Pending",
+    "unverified": "Not verified",
+    "valid": "Valid",
+    "warning": "Warning",
+    "unknown": "Unknown"
+  },
+  "footage": {
+    "title": "Access event footage",
+    "unavailable": "No camera footage is available for this event."
+  },
+  "cards": {
+    "title": "Cards for {{name}}",
+    "empty": "No cards have owners assigned.",
+    "cardNumber": "Card number",
+    "owners": "Allowed faces",
+    "noFaces": "Register faces in the Face Library before assigning cards."
   },
   "delete": {
     "title": "Delete Access Controller",
@@ -62,14 +100,22 @@
       "created": "Successfully created access controller.",
       "updated": "Successfully updated access controller.",
       "deleted": "Successfully deleted access controller.",
-      "refreshed": "Connection refreshed."
+      "refreshed": "Connection refreshed.",
+      "connected": "Controller connected.",
+      "cardSaved": "Card owners saved.",
+      "cardRemoved": "Card owners removed."
     },
     "error": {
       "loadDevicesFailed": "Failed to load access controllers.",
       "loadEventsFailed": "Failed to load access events.",
       "saveFailed": "Failed to save access controller.",
       "deleteFailed": "Failed to delete access controller.",
-      "refreshFailed": "Failed to refresh access controller."
-    }
+      "refreshFailed": "Failed to refresh access controller.",
+      "connectionFailed": "Controller is still offline.",
+      "connectionError": "Controller responded with invalid system information.",
+      "cardSaveFailed": "Failed to save card owners.",
+      "cardRemoveFailed": "Failed to remove card owners."
+    },
+    "connectionSummary": "{{online}} of {{total}} controllers connected."
   }
 }

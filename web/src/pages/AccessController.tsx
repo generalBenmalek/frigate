@@ -4,8 +4,11 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
+import { baseUrl } from "@/api/baseUrl";
 import { Button } from "@/components/ui/button";
+import { GenericVideoPlayer } from "@/components/player/GenericVideoPlayer";
 import { FrigateConfig } from "@/types/frigateConfig";
+import { FaceLibraryData } from "@/types/face";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -28,7 +31,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LuPencil, LuPlus, LuRotateCcw, LuTrash2 } from "react-icons/lu";
+import { LuPencil, LuPlay, LuPlus, LuRotateCcw, LuTrash2, LuUsers } from "react-icons/lu";
 
 type AccessControllerRecord = {
   id: string;
@@ -39,21 +42,31 @@ type AccessControllerRecord = {
   model: string;
   serial_number: string;
   status: string;
+  last_checked_at?: number | null;
+  seconds_before: number;
+  seconds_after: number;
   associated_camera?: string | null;
   username?: string;
   password?: string;
 };
 
 type EventRecord = {
+  id: string;
   device_id?: string;
   device_name?: string;
   time?: string;
   Time?: string;
-  timestamp?: string;
+  timestamp?: number | string;
   Code?: string;
   code?: string;
   action?: string;
   data?: Record<string, unknown> | string | null;
+  card_number?: string | null;
+  verification_status?: "pending" | "unverified" | "valid" | "warning" | "unknown";
+  people?: { event_id: string; name: string; start_time: number; end_time: number | null }[];
+  camera?: string | null;
+  clip_start?: number;
+  clip_end?: number;
   [key: string]: unknown;
 };
 
@@ -65,6 +78,9 @@ type DeviceFormValues = {
   ipAddress: string;
   port: number;
   associatedCamera: string;
+  secondsBefore: number;
+  secondsAfter: number;
+  clearCredentials: boolean;
 };
 
 type DeviceEditorState = {
@@ -87,12 +103,23 @@ function getErrorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function getLiveStatus(device: AccessControllerRecord) {
+  if (!device.last_checked_at || Date.now() / 1000 - device.last_checked_at > 30) {
+    return "unknown";
+  }
+  return device.status?.toLowerCase() || "unknown";
+}
+
 export default function AccessControllerPage() {
   const { t } = useTranslation(["common", "views/organization"]);
   const [activeTab, setActiveTab] = useState<"controllers" | "events">("controllers");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("all");
   const [deviceEditor, setDeviceEditor] = useState<DeviceEditorState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
+  const [cardTarget, setCardTarget] = useState<AccessControllerRecord | null>(null);
+  const [footageEvent, setFootageEvent] = useState<EventRecord | null>(null);
+  const [retrying, setRetrying] = useState<string[]>([]);
+  const [connectingAll, setConnectingAll] = useState(false);
 
   useEffect(() => {
     document.title = t("documentTitle", { ns: "views/organization" });
@@ -104,6 +131,7 @@ export default function AccessControllerPage() {
     error: controllersError,
   } = useSWR<AccessControllerRecord[]>("access-controllers", {
     revalidateOnFocus: false,
+    refreshInterval: 5000,
   });
 
   const eventKey = useMemo(
@@ -126,6 +154,10 @@ export default function AccessControllerPage() {
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
   });
+  const { data: faceLibrary } = useSWR<FaceLibraryData>(cardTarget ? "faces" : null);
+  const { data: cardMappings, mutate: refreshCards } = useSWR<Record<string, string[]>>(
+    cardTarget ? `access-controllers/${cardTarget.id}/cards` : null,
+  );
   const allowedCameras = useAllowedCameras();
 
   const cameraOptions = useMemo(() => {
@@ -170,11 +202,14 @@ export default function AccessControllerPage() {
     const payload = {
       id: values.id,
       name: values.name,
-      username: values.username,
-      password: values.password,
       ip_address: values.ipAddress,
       port: values.port,
       associated_camera: values.associatedCamera || null,
+      seconds_before: values.secondsBefore,
+      seconds_after: values.secondsAfter,
+      ...(mode === "create" || values.username ? { username: values.username } : {}),
+      ...(mode === "create" || values.password ? { password: values.password } : {}),
+      ...(mode === "edit" && values.clearCredentials ? { clear_credentials: true } : {}),
     };
 
     try {
@@ -202,17 +237,51 @@ export default function AccessControllerPage() {
   };
 
   const handleRetry = async (deviceId: string) => {
+    setRetrying((current) => [...current, deviceId]);
     try {
-      await axios.post(`access-controllers/${deviceId}/refresh`);
-      toast.success(t("toast.success.refreshed", { ns: "views/organization" }), {
-        position: "top-center",
-      });
+      const { data } = await axios.post<AccessControllerRecord>(`access-controllers/${deviceId}/refresh`);
+      if (data.status === "online") {
+        toast.success(t("toast.success.connected", { ns: "views/organization" }), { position: "top-center" });
+      } else {
+        toast.error(
+          t(data.status === "error" ? "toast.error.connectionError" : "toast.error.connectionFailed", { ns: "views/organization" }),
+          { position: "top-center" },
+        );
+      }
       await refreshControllers();
     } catch (error) {
       toast.error(
         getErrorMessage(error, t("toast.error.refreshFailed", { ns: "views/organization" })),
         { position: "top-center" },
       );
+    } finally {
+      setRetrying((current) => current.filter((id) => id !== deviceId));
+    }
+  };
+
+  const handleConnectAll = async () => {
+    setConnectingAll(true);
+    try {
+      const { data } = await axios.post<AccessControllerRecord[]>("access-controllers/refresh-all");
+      const online = data.filter((device) => device.status === "online").length;
+      const message = t("toast.connectionSummary", {
+        ns: "views/organization",
+        online,
+        total: data.length,
+      });
+      if (online === data.length) {
+        toast.success(message, { position: "top-center" });
+      } else {
+        toast.error(message, { position: "top-center" });
+      }
+      await Promise.all([refreshControllers(), refreshEvents()]);
+    } catch (error) {
+      toast.error(
+        getErrorMessage(error, t("toast.error.refreshFailed", { ns: "views/organization" })),
+        { position: "top-center" },
+      );
+    } finally {
+      setConnectingAll(false);
     }
   };
 
@@ -242,6 +311,13 @@ export default function AccessControllerPage() {
     error: "bg-amber-500/10 text-amber-500",
     unknown: "bg-slate-500/10 text-slate-300",
   };
+  const verificationClasses: Record<string, string> = {
+    valid: "text-emerald-500",
+    warning: "text-amber-500",
+    unknown: "text-slate-400",
+    pending: "text-blue-400",
+    unverified: "text-muted-foreground",
+  };
 
   return (
     <div className="size-full overflow-hidden p-4">
@@ -270,7 +346,11 @@ export default function AccessControllerPage() {
           </TabsList>
 
           <TabsContent value="controllers" className="space-y-4">
-            <div className="flex justify-end">
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={handleConnectAll} disabled={connectingAll || deviceList.length === 0}>
+                <LuRotateCcw className="mr-2 size-4" />
+                {t("button.connectAll", { ns: "views/organization" })}
+              </Button>
               <Button
                 onClick={() =>
                   setDeviceEditor({
@@ -284,7 +364,7 @@ export default function AccessControllerPage() {
               </Button>
             </div>
 
-            <div className="rounded-lg border bg-card">
+            <div className="overflow-x-auto rounded-lg border bg-card">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -296,6 +376,7 @@ export default function AccessControllerPage() {
                     <TableHead>{t("controllers.table.model", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("controllers.table.serial", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("controllers.table.status", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("controllers.table.lastChecked", { ns: "views/organization" })}</TableHead>
                     <TableHead className="text-right">
                       {t("controllers.table.actions", { ns: "views/organization" })}
                     </TableHead>
@@ -304,7 +385,7 @@ export default function AccessControllerPage() {
                 <TableBody>
                   {deviceList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
                         {t("controllers.empty", { ns: "views/organization" })}
                       </TableCell>
                     </TableRow>
@@ -320,10 +401,13 @@ export default function AccessControllerPage() {
                         <TableCell>{device.serial_number || "-"}</TableCell>
                         <TableCell>
                           <span
-                            className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusClasses[device.status?.toLowerCase()] ?? statusClasses.unknown}`}
+                            className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusClasses[getLiveStatus(device)] ?? statusClasses.unknown}`}
                           >
-                            {device.status || "offline"}
+                            {t(`status.${getLiveStatus(device)}`, { ns: "views/organization", defaultValue: device.status || "unknown" })}
                           </span>
+                        </TableCell>
+                        <TableCell>
+                          {device.last_checked_at ? new Date(device.last_checked_at * 1000).toLocaleString() : "-"}
                         </TableCell>
                         <TableCell className="space-x-2 text-right">
                           <Button
@@ -343,9 +427,14 @@ export default function AccessControllerPage() {
                             variant="ghost"
                             size="sm"
                             onClick={() => handleRetry(device.id)}
+                            disabled={retrying.includes(device.id) || connectingAll}
                           >
                             <LuRotateCcw className="mr-1 size-4" />
                             {t("button.retry", { ns: "common" })}
+                          </Button>
+                          <Button variant="ghost" size="sm" onClick={() => setCardTarget(device)}>
+                            <LuUsers className="mr-1 size-4" />
+                            {t("button.cards", { ns: "views/organization" })}
                           </Button>
                           <Button
                             variant="ghost"
@@ -384,7 +473,7 @@ export default function AccessControllerPage() {
               </Select>
             </div>
 
-            <div className="rounded-lg border bg-card">
+            <div className="overflow-x-auto rounded-lg border bg-card">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -392,13 +481,17 @@ export default function AccessControllerPage() {
                     <TableHead>{t("events.table.device", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.code", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.action", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("events.table.card", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("events.table.people", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("events.table.verification", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("events.table.footage", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.details", { ns: "views/organization" })}</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {eventList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
                         {t("events.empty", { ns: "views/organization" })}
                       </TableCell>
                     </TableRow>
@@ -412,11 +505,34 @@ export default function AccessControllerPage() {
                             : JSON.stringify(event);
 
                       return (
-                        <TableRow key={`${event.device_id ?? "device"}-${index}`}>
-                          <TableCell>{event.time ?? event.Time ?? event.timestamp ?? "-"}</TableCell>
+                        <TableRow key={event.id ?? `${event.device_id ?? "device"}-${index}`}>
+                          <TableCell>
+                            {event.time ?? event.Time ??
+                              (typeof event.timestamp === "number"
+                                ? new Date(event.timestamp * 1000).toLocaleString()
+                                : event.timestamp ?? "-")}
+                          </TableCell>
                           <TableCell>{event.device_name ?? event.device_id ?? "-"}</TableCell>
                           <TableCell>{String(event.code ?? event.Code ?? "-")}</TableCell>
                           <TableCell>{String(event.action ?? "-")}</TableCell>
+                          <TableCell>{event.card_number || "-"}</TableCell>
+                          <TableCell>{event.people?.map((person) => person.name).join(", ") || "-"}</TableCell>
+                          <TableCell>
+                            <span className={verificationClasses[event.verification_status ?? "unverified"]}>
+                              {t(`verification.${event.verification_status ?? "unverified"}`, { ns: "views/organization" })}
+                            </span>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              disabled={!event.camera || event.clip_start === undefined || event.clip_end === undefined}
+                              onClick={() => setFootageEvent(event)}
+                            >
+                              <LuPlay className="mr-1 size-4" />
+                              {t("button.viewFootage", { ns: "views/organization" })}
+                            </Button>
+                          </TableCell>
                           <TableCell className="max-w-md truncate">{details}</TableCell>
                         </TableRow>
                       );
@@ -437,6 +553,35 @@ export default function AccessControllerPage() {
           onClose={() => setDeviceEditor(null)}
           onSave={handleSave}
         />
+      )}
+
+      {cardTarget && (
+        <CardOwnersDialog
+          device={cardTarget}
+          mappings={cardMappings ?? {}}
+          faceNames={Object.keys(faceLibrary ?? {}).filter((name) => !["train", "unknown"].includes(name.toLowerCase())).sort()}
+          onClose={() => setCardTarget(null)}
+          onChanged={refreshCards}
+        />
+      )}
+
+      {footageEvent && (
+        <Dialog open={true} onOpenChange={(open) => !open && setFootageEvent(null)}>
+          <DialogContent className="max-w-4xl">
+            <DialogHeader>
+              <DialogTitle>{t("footage.title", { ns: "views/organization" })}</DialogTitle>
+            </DialogHeader>
+            {footageEvent.camera && footageEvent.clip_start !== undefined && footageEvent.clip_end !== undefined ? (
+              <div className="aspect-video">
+                <GenericVideoPlayer
+                  source={`${baseUrl}api/vod/clip/${encodeURIComponent(footageEvent.camera)}/start/${footageEvent.clip_start}/end/${footageEvent.clip_end}/index.m3u8`}
+                />
+              </div>
+            ) : (
+              <p>{t("footage.unavailable", { ns: "views/organization" })}</p>
+            )}
+          </DialogContent>
+        </Dialog>
       )}
 
       {deleteTarget && (
@@ -485,6 +630,9 @@ function DeviceEditorDialog({
     ipAddress: initialDevice?.ip_address ?? "",
     port: initialDevice?.port ?? 80,
     associatedCamera: initialDevice?.associated_camera ?? "",
+    secondsBefore: initialDevice?.seconds_before ?? 10,
+    secondsAfter: initialDevice?.seconds_after ?? 10,
+    clearCredentials: false,
   });
 
   const handleSubmit = async (event: FormEvent) => {
@@ -526,7 +674,7 @@ function DeviceEditorDialog({
               <Input
                 value={values.username}
                 onChange={(event) => setValues({ ...values, username: event.target.value })}
-                placeholder="admin"
+                placeholder={t("dialog.usernamePlaceholder", { ns: "views/organization" })}
               />
             </div>
             <div className="space-y-2">
@@ -535,7 +683,7 @@ function DeviceEditorDialog({
                 type="password"
                 value={values.password}
                 onChange={(event) => setValues({ ...values, password: event.target.value })}
-                placeholder="optional"
+                placeholder={t("dialog.passwordPlaceholder", { ns: "views/organization" })}
               />
             </div>
             <div className="space-y-2">
@@ -581,8 +729,42 @@ function DeviceEditorDialog({
                 </SelectContent>
               </Select>
             </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("dialog.secondsBefore", { ns: "views/organization" })}</label>
+              <Input
+                type="number"
+                min={0}
+                max={300}
+                value={values.secondsBefore}
+                onChange={(event) => setValues({ ...values, secondsBefore: Number(event.target.value) })}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">{t("dialog.secondsAfter", { ns: "views/organization" })}</label>
+              <Input
+                type="number"
+                min={0}
+                max={300}
+                value={values.secondsAfter}
+                onChange={(event) => setValues({ ...values, secondsAfter: Number(event.target.value) })}
+                required
+              />
+            </div>
           </div>
-          <p className="text-xs text-muted-foreground">{t("dialog.nonAuth", { ns: "views/organization" })}</p>
+          <p className="text-xs text-muted-foreground">
+            {t(mode === "create" ? "dialog.nonAuth" : "dialog.keepCredentials", { ns: "views/organization" })}
+          </p>
+          {mode === "edit" && (
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={values.clearCredentials}
+                onChange={(event) => setValues({ ...values, clearCredentials: event.target.checked })}
+              />
+              {t("dialog.clearCredentials", { ns: "views/organization" })}
+            </label>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={onClose}>
               {t("button.cancel", { ns: "common" })}
@@ -592,6 +774,110 @@ function DeviceEditorDialog({
             </Button>
           </DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type CardOwnersDialogProps = {
+  device: AccessControllerRecord;
+  mappings: Record<string, string[]>;
+  faceNames: string[];
+  onClose: () => void;
+  onChanged: () => Promise<unknown>;
+};
+
+function CardOwnersDialog({ device, mappings, faceNames, onClose, onChanged }: CardOwnersDialogProps) {
+  const { t } = useTranslation(["common", "views/organization"]);
+  const [cardNumber, setCardNumber] = useState("");
+  const [selectedFaces, setSelectedFaces] = useState<string[]>([]);
+  const [editingCard, setEditingCard] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    if (!cardNumber.trim() || selectedFaces.length === 0) return;
+    setSaving(true);
+    try {
+      await axios.put(`access-controllers/${device.id}/cards`, {
+        card_number: cardNumber.trim(),
+        face_names: selectedFaces,
+      });
+      await onChanged();
+      setCardNumber("");
+      setSelectedFaces([]);
+      setEditingCard(null);
+      toast.success(t("toast.success.cardSaved", { ns: "views/organization" }), { position: "top-center" });
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("toast.error.cardSaveFailed", { ns: "views/organization" })), { position: "top-center" });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const remove = async (number: string) => {
+    try {
+      await axios.delete(`access-controllers/${device.id}/cards`, { params: { card_number: number } });
+      await onChanged();
+      if (editingCard === number) {
+        setEditingCard(null);
+        setCardNumber("");
+        setSelectedFaces([]);
+      }
+      toast.success(t("toast.success.cardRemoved", { ns: "views/organization" }), { position: "top-center" });
+    } catch (error) {
+      toast.error(getErrorMessage(error, t("toast.error.cardRemoveFailed", { ns: "views/organization" })), { position: "top-center" });
+    }
+  };
+
+  return (
+    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
+        <DialogHeader>
+          <DialogTitle>{t("cards.title", { ns: "views/organization", name: device.name })}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-3">
+          {Object.entries(mappings).sort(([a], [b]) => a.localeCompare(b)).map(([number, owners]) => (
+            <div key={number} className="flex items-center justify-between gap-2 rounded border p-2">
+              <div className="min-w-0">
+                <div className="font-medium">{number}</div>
+                <div className="truncate text-sm text-muted-foreground">{owners.join(", ")}</div>
+              </div>
+              <div className="flex gap-1">
+                <Button variant="ghost" size="sm" onClick={() => { setEditingCard(number); setCardNumber(number); setSelectedFaces(owners); }}>
+                  {t("button.edit", { ns: "common" })}
+                </Button>
+                <Button variant="ghost" size="sm" onClick={() => remove(number)}>
+                  {t("button.delete", { ns: "common" })}
+                </Button>
+              </div>
+            </div>
+          ))}
+          {Object.keys(mappings).length === 0 && <p className="text-sm text-muted-foreground">{t("cards.empty", { ns: "views/organization" })}</p>}
+        </div>
+        <div className="space-y-3 border-t pt-4">
+          <label className="block text-sm font-medium">{t("cards.cardNumber", { ns: "views/organization" })}</label>
+          <Input value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} disabled={editingCard !== null} />
+          <p className="text-sm font-medium">{t("cards.owners", { ns: "views/organization" })}</p>
+          <div className="max-h-40 space-y-1 overflow-y-auto">
+            {faceNames.length === 0 && <p className="text-sm text-muted-foreground">{t("cards.noFaces", { ns: "views/organization" })}</p>}
+            {faceNames.map((name) => (
+              <label key={name} className="flex items-center gap-2 text-sm">
+                <input
+                  type="checkbox"
+                  checked={selectedFaces.includes(name)}
+                  onChange={(event) => setSelectedFaces((current) => event.target.checked ? [...current, name] : current.filter((value) => value !== name))}
+                />
+                {name}
+              </label>
+            ))}
+          </div>
+          <DialogFooter>
+            {editingCard && <Button variant="outline" onClick={() => { setEditingCard(null); setCardNumber(""); setSelectedFaces([]); }}>{t("button.cancel", { ns: "common" })}</Button>}
+            <Button onClick={save} disabled={saving || !cardNumber.trim() || selectedFaces.length === 0}>
+              {t("button.save", { ns: "common" })}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );
