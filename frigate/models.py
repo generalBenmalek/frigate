@@ -181,6 +181,7 @@ class User(Model):
 #         on_update="CASCADE",
 #     )
 
+
 class AccessControl(Model):
     id = CharField(
         null=False,
@@ -251,15 +252,6 @@ class AccessControl(Model):
     last_event_poll = FloatField(null=True)
 
 
-class AccessCardOwner(Model):
-    device_id = CharField(max_length=30, index=True)
-    card_number = CharField(max_length=100)
-    face_name = CharField(max_length=100)
-
-    class Meta:
-        indexes = ((('device_id', 'card_number', 'face_name'), True),)
-
-
 class AccessEvent(Model):
     id = CharField(primary_key=True, max_length=64)
     device_id = CharField(max_length=30, index=True)
@@ -273,7 +265,8 @@ class AccessEvent(Model):
     seconds_after = IntegerField(default=10)
 
     class Meta:
-        table_name = "access_control"
+        table_name = "access_event"
+
 
 class Trigger(Model):
     camera = CharField(max_length=20)

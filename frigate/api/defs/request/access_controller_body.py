@@ -23,8 +23,3 @@ class AccessControllerUpdateBody(BaseModel):
     associated_camera: str | None = Field(default=None, max_length=100)
     seconds_before: int | None = Field(default=None, ge=0, le=300)
     seconds_after: int | None = Field(default=None, ge=0, le=300)
-
-
-class AccessCardOwnerBody(BaseModel):
-    card_number: str = Field(min_length=1, max_length=100)
-    face_names: list[str] = Field(min_length=1)

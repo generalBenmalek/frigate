@@ -9,7 +9,6 @@
   "button": {
     "addController": "Add Access Controller",
     "connectAll": "Connect all",
-    "cards": "Cards",
     "viewFootage": "View footage"
   },
   "status": {
@@ -47,6 +46,7 @@
       "code": "Code",
       "action": "Action",
       "card": "Card",
+      "owners": "Card owners",
       "people": "People seen",
       "verification": "Verification",
       "footage": "Footage",
@@ -84,13 +84,6 @@
     "title": "Access event footage",
     "unavailable": "No camera footage is available for this event."
   },
-  "cards": {
-    "title": "Cards for {{name}}",
-    "empty": "No cards have owners assigned.",
-    "cardNumber": "Card number",
-    "owners": "Allowed faces",
-    "noFaces": "Register faces in the Face Library before assigning cards."
-  },
   "delete": {
     "title": "Delete Access Controller",
     "description": "Are you sure you want to delete {{name}}?"
@@ -101,9 +94,7 @@
       "updated": "Successfully updated access controller.",
       "deleted": "Successfully deleted access controller.",
       "refreshed": "Connection refreshed.",
-      "connected": "Controller connected.",
-      "cardSaved": "Card owners saved.",
-      "cardRemoved": "Card owners removed."
+      "connected": "Controller connected."
     },
     "error": {
       "loadDevicesFailed": "Failed to load access controllers.",
@@ -112,9 +103,7 @@
       "deleteFailed": "Failed to delete access controller.",
       "refreshFailed": "Failed to refresh access controller.",
       "connectionFailed": "Controller is still offline.",
-      "connectionError": "Controller responded with invalid system information.",
-      "cardSaveFailed": "Failed to save card owners.",
-      "cardRemoveFailed": "Failed to remove card owners."
+      "connectionError": "Controller responded with invalid system information."
     },
     "connectionSummary": "{{online}} of {{total}} controllers connected."
   }

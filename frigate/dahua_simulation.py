@@ -190,7 +190,7 @@ class DahuaSimulatorHandler(
 
         elif path == "/cgi-bin/recordFinder.cgi":
 
-            self.records()
+            self.records(params)
 
         # ----------------------------------------------------
         # SIMULATOR CONTROL API
@@ -344,6 +344,8 @@ class DahuaSimulatorHandler(
             [""]
         )[0]
 
+        names = [name.strip() for name in params.get("name", [user]) if name.strip()]
+
         card = params.get(
             "card",
             [""]
@@ -362,6 +364,11 @@ class DahuaSimulatorHandler(
 
                 "UserID":
                     user,
+
+                "CardName":
+                    names[0] if names else "",
+
+                **{f"CardNames[{index}]": name for index, name in enumerate(names)},
 
                 "CardNo":
                     card,
@@ -531,7 +538,7 @@ class DahuaSimulatorHandler(
     # HISTORICAL RECORDS
     # ========================================================
 
-    def records(self):
+    def records(self, params):
 
         if not STATE.online:
 
@@ -549,6 +556,31 @@ class DahuaSimulatorHandler(
             events = list(
                 STATE.events
             )
+
+        record_name = params.get("name", ["AccessControlCardRec"])[0]
+        card_number = params.get("condition.CardNo", [None])[0]
+        start = int(params.get("StartTime", [0])[0])
+        end = int(params.get("EndTime", [time.time()])[0])
+
+        events = [
+            event for event in events
+            if (not card_number or event.get("CardNo") == card_number)
+            and (record_name == "AccessControlCard" or start <= event["timestamp"] <= end)
+        ]
+        if record_name == "AccessControlCard":
+            events = [
+                {
+                    "CardNo": event["CardNo"],
+                    "CardName": event.get("CardName", ""),
+                    "UserID": event.get("UserID", ""),
+                    **{
+                        key: value for key, value in event.items()
+                        if key.startswith("CardNames[")
+                    },
+                }
+                for event in events
+                if event.get("CardNo")
+            ]
 
         for index, event in enumerate(
             events

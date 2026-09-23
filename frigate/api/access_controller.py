@@ -4,7 +4,6 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from pathlib import Path
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse
@@ -16,13 +15,12 @@ from frigate.access_controller_service import (
 )
 from frigate.api.auth import require_role
 from frigate.api.defs.request.access_controller_body import (
-    AccessCardOwnerBody,
     AccessControllerBody,
     AccessControllerUpdateBody,
 )
 from frigate.api.defs.tags import Tags
-from frigate.const import FACE_DIR
-from frigate.models import AccessCardOwner, AccessControl, AccessEvent
+from frigate.dahua_adapter import DahuaAccessController
+from frigate.models import AccessControl, AccessEvent
 
 logger = logging.getLogger(__name__)
 
@@ -119,6 +117,7 @@ def create_access_controller(body: AccessControllerBody):
         username=str(body.username or ""),
         password=str(body.password or ""),
         status="offline",
+        event_tracking_started_at=time.time(),
         associated_camera=body.associated_camera,
         seconds_before=body.seconds_before,
         seconds_after=body.seconds_after,
@@ -175,7 +174,7 @@ def update_access_controller(device_id: str, body: AccessControllerUpdateBody):
     dependencies=[Depends(require_role(["admin"]))],
 )
 def delete_access_controller(device_id: str):
-    """Delete a controller and its card-owner mappings."""
+    """Delete a controller."""
     _ensure_access_control_table()
     deleted = AccessControl.delete().where(AccessControl.id == device_id).execute()
     if deleted == 0:
@@ -186,7 +185,6 @@ def delete_access_controller(device_id: str):
             },
             status_code=404,
         )
-    AccessCardOwner.delete().where(AccessCardOwner.device_id == device_id).execute()
     return JSONResponse(
         content={"success": True, "message": "Successfully deleted access controller"}
     )
@@ -252,14 +250,21 @@ def get_access_controller_events(
     }
     events = []
     for event in query.order_by(AccessEvent.occurred_at.desc()).limit(250):
+        raw_record = {
+            key: value
+            for key, value in event.raw_record.items()
+            if key not in {"_owner_names", "_owner_names_complete"}
+        }
         events.append(
             {
-                **event.raw_record,
+                **raw_record,
                 "id": event.id,
                 "device_id": event.device_id,
                 "device_name": names.get(event.device_id, event.device_id),
                 "timestamp": event.occurred_at,
                 "card_number": event.card_number,
+                "owner_names": event.raw_record.get("_owner_names")
+                or DahuaAccessController.record_names(event.raw_record),
                 "verification_status": event.verification_status,
                 "people": event.people,
                 "camera": event.camera,
@@ -301,78 +306,3 @@ def access_controller_live_events(device_id: str):
     return JSONResponse(
         content={"device_id": device.id, "status": "online", "system_info": info}
     )
-
-
-@router.get(
-    "/access-controllers/{device_id}/cards",
-    dependencies=[Depends(require_role(["admin"]))],
-)
-def get_access_card_owners(device_id: str):
-    """List registered face names allowed to use each card."""
-    if AccessControl.get_or_none(AccessControl.id == device_id) is None:
-        return JSONResponse(
-            content={"message": "Access controller not found"}, status_code=404
-        )
-    cards: dict[str, list[str]] = {}
-    for owner in AccessCardOwner.select().where(AccessCardOwner.device_id == device_id):
-        cards.setdefault(owner.card_number, []).append(owner.face_name)
-    return JSONResponse(content=cards)
-
-
-@router.put(
-    "/access-controllers/{device_id}/cards",
-    dependencies=[Depends(require_role(["admin"]))],
-)
-def save_access_card_owners(device_id: str, body: AccessCardOwnerBody):
-    """Replace a card's allowed owners with registered Frigate faces."""
-    if AccessControl.get_or_none(AccessControl.id == device_id) is None:
-        return JSONResponse(
-            content={"message": "Access controller not found"}, status_code=404
-        )
-    names = {name.strip() for name in body.face_names}
-    card_number = body.card_number.strip()
-    if not card_number:
-        return JSONResponse(
-            content={"message": "Card number is required"}, status_code=400
-        )
-    if any(
-        not name
-        or name.lower() in {".", "..", "train", "unknown"}
-        or "/" in name
-        or "\\" in name
-        or not (Path(FACE_DIR) / name).is_dir()
-        for name in names
-    ):
-        return JSONResponse(
-            content={"message": "Choose registered face names"}, status_code=400
-        )
-    AccessCardOwner.delete().where(
-        (AccessCardOwner.device_id == device_id)
-        & (AccessCardOwner.card_number == card_number)
-    ).execute()
-    AccessCardOwner.insert_many(
-        [
-            {"device_id": device_id, "card_number": card_number, "face_name": name}
-            for name in sorted(names)
-        ]
-    ).execute()
-    return JSONResponse(
-        content={"card_number": card_number, "face_names": sorted(names)}
-    )
-
-
-@router.delete(
-    "/access-controllers/{device_id}/cards",
-    dependencies=[Depends(require_role(["admin"]))],
-)
-def delete_access_card_owners(device_id: str, card_number: str = Query(min_length=1)):
-    """Remove all owner mappings for one card."""
-    if AccessControl.get_or_none(AccessControl.id == device_id) is None:
-        return JSONResponse(
-            content={"message": "Access controller not found"}, status_code=404
-        )
-    AccessCardOwner.delete().where(
-        (AccessCardOwner.device_id == device_id)
-        & (AccessCardOwner.card_number == card_number)
-    ).execute()
-    return JSONResponse(content={"success": True})

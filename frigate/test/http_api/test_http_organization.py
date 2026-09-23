@@ -6,9 +6,8 @@ from unittest.mock import patch
 import requests
 from fastapi.testclient import TestClient
 
-from frigate.access_controller_service import verify_pending_events
+from frigate.access_controller_service import poll_controller, verify_pending_events
 from frigate.models import (
-    AccessCardOwner,
     AccessControl,
     AccessEvent,
     Event,
@@ -19,7 +18,7 @@ from frigate.test.http_api.base_http_test import AuthTestClient, BaseTestHttp
 
 class TestHttpAccessController(BaseTestHttp):
     def setUp(self):
-        super().setUp([AccessControl, AccessCardOwner, AccessEvent, Event, Recordings])
+        super().setUp([AccessControl, AccessEvent, Event, Recordings])
         self.app = self.create_app()
 
     def tearDown(self):
@@ -137,6 +136,63 @@ class TestHttpAccessController(BaseTestHttp):
         assert response.json()["status"] == "offline"
         assert response.json()["last_checked_at"] is not None
 
+    def test_granted_card_records_use_controller_names(self):
+        scan_time = int(time.time()) - 1
+        AccessControl.create(
+            id="ac_1",
+            name="Door 1",
+            ip_address="127.0.0.1",
+            type="Dahua",
+            model="Unknown",
+            port=80,
+            channel_count=1,
+            serial_number="",
+            username="",
+            password="",
+            event_tracking_started_at=scan_time - 1,
+        )
+        records = [
+            {
+                "CreateTime": str(scan_time),
+                "CardNo": "123",
+                "CardName": "Alice",
+                "Status": "1",
+                "Method": "1",
+            },
+            {
+                "CreateTime": str(scan_time),
+                "CardNo": "456",
+                "CardName": "Bob",
+                "Status": "0",
+                "Method": "1",
+            },
+        ]
+        with (
+            patch(
+                "frigate.access_controller_service.DahuaAccessController.get_system_info",
+                return_value={"deviceName": "Door 1"},
+            ),
+            patch(
+                "frigate.access_controller_service.DahuaAccessController.get_access_records",
+                return_value=records,
+            ),
+            patch(
+                "frigate.access_controller_service.DahuaAccessController.get_card_owners",
+                return_value=["Alice", "Alex"],
+            ) as card_owners,
+        ):
+            poll_controller("ac_1")
+
+        assert card_owners.call_count == 1
+        granted = AccessEvent.get(AccessEvent.card_number == "123")
+        assert granted.verification_status == "pending"
+        assert granted.raw_record["_owner_names"] == ["Alice", "Alex"]
+        assert granted.raw_record["_owner_names_complete"] is True
+        assert (
+            AccessEvent.get(AccessEvent.card_number == "456").verification_status
+            == "unverified"
+        )
+
     def test_card_verification_uses_all_people_in_window(self):
         scan_time = time.time() - 30
         AccessEvent.create(
@@ -144,12 +200,11 @@ class TestHttpAccessController(BaseTestHttp):
             device_id="ac_1",
             occurred_at=scan_time,
             card_number="123",
-            raw_record={"CardNo": "123"},
+            raw_record={"CardNo": "123", "_owner_names": ["Alice"]},
             verification_status="pending",
             people=[],
             camera="front_door",
         )
-        AccessCardOwner.create(device_id="ac_1", card_number="123", face_name="Alice")
         self.insert_mock_event("person-1", scan_time - 2, scan_time + 2)
         Event.update(label="person", sub_label="Alice").where(
             Event.id == "person-1"

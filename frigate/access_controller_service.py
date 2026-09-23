@@ -13,7 +13,6 @@ import requests
 from frigate.const import FACE_DIR
 from frigate.dahua_adapter import DahuaAccessController
 from frigate.models import (
-    AccessCardOwner,
     AccessControl,
     AccessEvent,
     Event,
@@ -85,7 +84,8 @@ def probe_device(device: AccessControl) -> AccessControl:
 
 def _record_time(row: dict) -> float | None:
     value = (
-        row.get("Time")
+        row.get("CreateTime")
+        or row.get("Time")
         or row.get("time")
         or row.get("datetime")
         or row.get("timestamp")
@@ -113,10 +113,26 @@ def _timestamp(value: datetime | float | None) -> float | None:
 
 
 def _detected_names(person: dict) -> set[str]:
-    return {name.strip() for name in str(person["name"]).split(",")}
+    return {name.strip().casefold() for name in str(person["name"]).split(",")}
 
 
-def _store_record(device: AccessControl, row: dict) -> None:
+def _access_granted_card_scan(row: dict) -> bool:
+    """Select successful card scans, excluding denied and non-card events."""
+    if not (row.get("CardNo") or row.get("card_number")):
+        return False
+    method = row.get("Method")
+    if method is not None and str(method) not in {"1", "2", "3"}:
+        return False
+    status = row.get("Status")
+    if status is not None:
+        return str(status).strip().casefold() in {"1", "true", "success", "succeeded"}
+    event_type = str(row.get("EventType") or "").casefold()
+    return event_type in {"accessgranted", "accessallowed"}
+
+
+def _store_record(
+    device: AccessControl, row: dict, owner_names: list[str], owners_complete: bool
+) -> None:
     occurred_at = _record_time(row)
     if occurred_at is None:
         return
@@ -124,13 +140,20 @@ def _store_record(device: AccessControl, row: dict) -> None:
     fingerprint = hashlib.sha256(
         f"{device.id}:{json.dumps(row, sort_keys=True, default=str)}".encode()
     ).hexdigest()
-    is_new_scan = bool(card_number) and occurred_at >= device.event_tracking_started_at
+    is_new_scan = _access_granted_card_scan(row) and occurred_at >= (
+        device.event_tracking_started_at or 0
+    )
+    record = {
+        **row,
+        "_owner_names": owner_names,
+        "_owner_names_complete": owners_complete,
+    }
     AccessEvent.insert(
         id=fingerprint,
         device_id=device.id,
         occurred_at=occurred_at,
         card_number=card_number or None,
-        raw_record=row,
+        raw_record=record,
         verification_status="pending" if is_new_scan else "unverified",
         people=[],
         camera=device.associated_camera,
@@ -151,17 +174,51 @@ def poll_controller(device_id: str) -> AccessControl | None:
     if device.status != "online":
         return device
     poll_end = time.time()
-    poll_start = device.last_event_poll or poll_end - HISTORY_SECONDS
+    poll_start = max(0, (device.last_event_poll or poll_end - HISTORY_SECONDS) - 30)
+    controller = build_controller(device)
     try:
-        rows = build_controller(device).get_access_records(
+        rows = controller.get_access_records(
             datetime.fromtimestamp(poll_start, UTC).astimezone(),
             datetime.fromtimestamp(poll_end, UTC).astimezone(),
         )
     except (requests.RequestException, ValueError) as err:
         logger.warning("Unable to fetch access events for %s: %s", device.id, err)
         return device
+    owners_by_card: dict[str, list[str]] = {}
     for row in rows:
-        _store_record(device, row)
+        card_number = str(row.get("CardNo") or row.get("card_number") or "").strip()
+        event_names = DahuaAccessController.record_names(row)
+        has_name_array = any(
+            key.startswith(("CardName[", "CardNames[", "UserNames[", "Names["))
+            or (
+                key in {"CardName", "CardNames", "UserNames", "Names"}
+                and (
+                    isinstance(value, list)
+                    or (isinstance(value, str) and value.strip().startswith("["))
+                )
+            )
+            for key, value in row.items()
+        )
+        if (
+            _access_granted_card_scan(row)
+            and not has_name_array
+            and card_number not in owners_by_card
+        ):
+            try:
+                owners_by_card[card_number] = controller.get_card_owners(card_number)
+            except (requests.RequestException, ValueError) as err:
+                logger.warning(
+                    "Unable to read card owners from controller %s: %s", device.id, err
+                )
+                owners_by_card[card_number] = []
+        _store_record(
+            device,
+            row,
+            event_names
+            if has_name_array
+            else owners_by_card.get(card_number) or event_names,
+            bool(owners_by_card.get(card_number)) or has_name_array,
+        )
     device.last_event_poll = poll_end
     device.save(only=[AccessControl.last_event_poll])
     return device
@@ -210,16 +267,19 @@ def verify_pending_events() -> None:
                 )
 
         access_event.people = people
+        owner_names = access_event.raw_record.get(
+            "_owner_names"
+        ) or DahuaAccessController.record_names(access_event.raw_record)
         owners = {
-            owner.face_name
-            for owner in AccessCardOwner.select(AccessCardOwner.face_name).where(
-                (AccessCardOwner.device_id == access_event.device_id)
-                & (AccessCardOwner.card_number == access_event.card_number)
-            )
+            name.casefold()
+            for name in owner_names
+            if isinstance(name, str) and name.strip()
         }
-        registered_owners = {
-            name for name in owners if (Path(FACE_DIR) / name).is_dir()
-        }
+        registered_faces = (
+            {path.name.casefold() for path in Path(FACE_DIR).iterdir() if path.is_dir()}
+            if Path(FACE_DIR).is_dir()
+            else set()
+        )
         has_recording = (
             bool(camera)
             and Recordings.select()
@@ -231,7 +291,13 @@ def verify_pending_events() -> None:
             .exists()
         )
 
-        if not owners or registered_owners != owners or not has_recording or not people:
+        if (
+            not owners
+            or access_event.raw_record.get("_owner_names_complete") is False
+            or not owners.issubset(registered_faces)
+            or not has_recording
+            or not people
+        ):
             access_event.verification_status = "unknown"
         elif any(not _detected_names(person).issubset(owners) for person in people):
             access_event.verification_status = "warning"

@@ -1,7 +1,8 @@
 import json
-import requests
+from collections.abc import Callable
 from datetime import datetime
-from typing import Callable, Optional
+
+import requests
 from requests.auth import HTTPDigestAuth
 
 
@@ -87,13 +88,8 @@ class DahuaAccessController:
         end_time: datetime,
     ) -> list[dict]:
 
-        start = start_time.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
-        end = end_time.strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
+        start = int(start_time.timestamp())
+        end = int(end_time.timestamp())
 
         url = (
             f"{self.base_url}"
@@ -114,6 +110,48 @@ class DahuaAccessController:
         return self._parse_records(
             response.text
         )
+
+    def get_card_owners(self, card_number: str) -> list[str]:
+        """Read the names attached to a card from the controller's card records."""
+        response = self.session.get(
+            f"{self.base_url}/cgi-bin/recordFinder.cgi",
+            params={
+                "action": "find",
+                "name": "AccessControlCard",
+                "condition.CardNo": card_number,
+                "count": 1024,
+            },
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        records = self._parse_records(response.text)
+        return sorted(
+            {
+                name
+                for record in records
+                if str(record.get("CardNo", "")).strip() == card_number
+                for name in self.record_names(record)
+            }
+        )
+
+    @staticmethod
+    def record_names(record: dict) -> list[str]:
+        """Extract single or indexed names from Dahua record fields."""
+        names: list[str] = []
+        for key, value in record.items():
+            if key not in {"CardName", "CardNames", "UserName", "UserNames", "Names"} and not key.startswith(
+                ("CardName[", "CardNames[", "UserName[", "UserNames[", "Names[")
+            ):
+                continue
+            if isinstance(value, str) and value.startswith("["):
+                try:
+                    value = json.loads(value)
+                except json.JSONDecodeError:
+                    pass
+            for item in value if isinstance(value, list) else [value]:
+                if isinstance(item, str) and item.strip():
+                    names.append(item.strip())
+        return list(dict.fromkeys(names))
 
     # =========================================================
     # LIVE EVENTS
@@ -177,7 +215,7 @@ class DahuaAccessController:
     @staticmethod
     def _parse_live_event(
         text: str,
-    ) -> Optional[dict]:
+    ) -> dict | None:
 
         event = {
             "code": None,

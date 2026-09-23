@@ -8,7 +8,6 @@ import { baseUrl } from "@/api/baseUrl";
 import { Button } from "@/components/ui/button";
 import { GenericVideoPlayer } from "@/components/player/GenericVideoPlayer";
 import { FrigateConfig } from "@/types/frigateConfig";
-import { FaceLibraryData } from "@/types/face";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +30,7 @@ import {
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { LuPencil, LuPlay, LuPlus, LuRotateCcw, LuTrash2, LuUsers } from "react-icons/lu";
+import { LuPencil, LuPlay, LuPlus, LuRotateCcw, LuTrash2 } from "react-icons/lu";
 
 type AccessControllerRecord = {
   id: string;
@@ -62,6 +61,7 @@ type EventRecord = {
   action?: string;
   data?: Record<string, unknown> | string | null;
   card_number?: string | null;
+  owner_names?: string[];
   verification_status?: "pending" | "unverified" | "valid" | "warning" | "unknown";
   people?: { event_id: string; name: string; start_time: number; end_time: number | null }[];
   camera?: string | null;
@@ -116,7 +116,6 @@ export default function AccessControllerPage() {
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("all");
   const [deviceEditor, setDeviceEditor] = useState<DeviceEditorState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
-  const [cardTarget, setCardTarget] = useState<AccessControllerRecord | null>(null);
   const [footageEvent, setFootageEvent] = useState<EventRecord | null>(null);
   const [retrying, setRetrying] = useState<string[]>([]);
   const [connectingAll, setConnectingAll] = useState(false);
@@ -154,10 +153,6 @@ export default function AccessControllerPage() {
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
   });
-  const { data: faceLibrary } = useSWR<FaceLibraryData>(cardTarget ? "faces" : null);
-  const { data: cardMappings, mutate: refreshCards } = useSWR<Record<string, string[]>>(
-    cardTarget ? `access-controllers/${cardTarget.id}/cards` : null,
-  );
   const allowedCameras = useAllowedCameras();
 
   const cameraOptions = useMemo(() => {
@@ -432,10 +427,6 @@ export default function AccessControllerPage() {
                             <LuRotateCcw className="mr-1 size-4" />
                             {t("button.retry", { ns: "common" })}
                           </Button>
-                          <Button variant="ghost" size="sm" onClick={() => setCardTarget(device)}>
-                            <LuUsers className="mr-1 size-4" />
-                            {t("button.cards", { ns: "views/organization" })}
-                          </Button>
                           <Button
                             variant="ghost"
                             size="sm"
@@ -482,6 +473,7 @@ export default function AccessControllerPage() {
                     <TableHead>{t("events.table.code", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.action", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.card", { ns: "views/organization" })}</TableHead>
+                    <TableHead>{t("events.table.owners", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.people", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.verification", { ns: "views/organization" })}</TableHead>
                     <TableHead>{t("events.table.footage", { ns: "views/organization" })}</TableHead>
@@ -491,7 +483,7 @@ export default function AccessControllerPage() {
                 <TableBody>
                   {eventList.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={9} className="py-8 text-center text-sm text-muted-foreground">
+                      <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
                         {t("events.empty", { ns: "views/organization" })}
                       </TableCell>
                     </TableRow>
@@ -516,6 +508,7 @@ export default function AccessControllerPage() {
                           <TableCell>{String(event.code ?? event.Code ?? "-")}</TableCell>
                           <TableCell>{String(event.action ?? "-")}</TableCell>
                           <TableCell>{event.card_number || "-"}</TableCell>
+                          <TableCell>{event.owner_names?.join(", ") || "-"}</TableCell>
                           <TableCell>{event.people?.map((person) => person.name).join(", ") || "-"}</TableCell>
                           <TableCell>
                             <span className={verificationClasses[event.verification_status ?? "unverified"]}>
@@ -552,16 +545,6 @@ export default function AccessControllerPage() {
           cameraOptions={cameraOptions}
           onClose={() => setDeviceEditor(null)}
           onSave={handleSave}
-        />
-      )}
-
-      {cardTarget && (
-        <CardOwnersDialog
-          device={cardTarget}
-          mappings={cardMappings ?? {}}
-          faceNames={Object.keys(faceLibrary ?? {}).filter((name) => !["train", "unknown"].includes(name.toLowerCase())).sort()}
-          onClose={() => setCardTarget(null)}
-          onChanged={refreshCards}
         />
       )}
 
@@ -774,110 +757,6 @@ function DeviceEditorDialog({
             </Button>
           </DialogFooter>
         </form>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-type CardOwnersDialogProps = {
-  device: AccessControllerRecord;
-  mappings: Record<string, string[]>;
-  faceNames: string[];
-  onClose: () => void;
-  onChanged: () => Promise<unknown>;
-};
-
-function CardOwnersDialog({ device, mappings, faceNames, onClose, onChanged }: CardOwnersDialogProps) {
-  const { t } = useTranslation(["common", "views/organization"]);
-  const [cardNumber, setCardNumber] = useState("");
-  const [selectedFaces, setSelectedFaces] = useState<string[]>([]);
-  const [editingCard, setEditingCard] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (!cardNumber.trim() || selectedFaces.length === 0) return;
-    setSaving(true);
-    try {
-      await axios.put(`access-controllers/${device.id}/cards`, {
-        card_number: cardNumber.trim(),
-        face_names: selectedFaces,
-      });
-      await onChanged();
-      setCardNumber("");
-      setSelectedFaces([]);
-      setEditingCard(null);
-      toast.success(t("toast.success.cardSaved", { ns: "views/organization" }), { position: "top-center" });
-    } catch (error) {
-      toast.error(getErrorMessage(error, t("toast.error.cardSaveFailed", { ns: "views/organization" })), { position: "top-center" });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const remove = async (number: string) => {
-    try {
-      await axios.delete(`access-controllers/${device.id}/cards`, { params: { card_number: number } });
-      await onChanged();
-      if (editingCard === number) {
-        setEditingCard(null);
-        setCardNumber("");
-        setSelectedFaces([]);
-      }
-      toast.success(t("toast.success.cardRemoved", { ns: "views/organization" }), { position: "top-center" });
-    } catch (error) {
-      toast.error(getErrorMessage(error, t("toast.error.cardRemoveFailed", { ns: "views/organization" })), { position: "top-center" });
-    }
-  };
-
-  return (
-    <Dialog open={true} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
-        <DialogHeader>
-          <DialogTitle>{t("cards.title", { ns: "views/organization", name: device.name })}</DialogTitle>
-        </DialogHeader>
-        <div className="space-y-3">
-          {Object.entries(mappings).sort(([a], [b]) => a.localeCompare(b)).map(([number, owners]) => (
-            <div key={number} className="flex items-center justify-between gap-2 rounded border p-2">
-              <div className="min-w-0">
-                <div className="font-medium">{number}</div>
-                <div className="truncate text-sm text-muted-foreground">{owners.join(", ")}</div>
-              </div>
-              <div className="flex gap-1">
-                <Button variant="ghost" size="sm" onClick={() => { setEditingCard(number); setCardNumber(number); setSelectedFaces(owners); }}>
-                  {t("button.edit", { ns: "common" })}
-                </Button>
-                <Button variant="ghost" size="sm" onClick={() => remove(number)}>
-                  {t("button.delete", { ns: "common" })}
-                </Button>
-              </div>
-            </div>
-          ))}
-          {Object.keys(mappings).length === 0 && <p className="text-sm text-muted-foreground">{t("cards.empty", { ns: "views/organization" })}</p>}
-        </div>
-        <div className="space-y-3 border-t pt-4">
-          <label className="block text-sm font-medium">{t("cards.cardNumber", { ns: "views/organization" })}</label>
-          <Input value={cardNumber} onChange={(event) => setCardNumber(event.target.value)} disabled={editingCard !== null} />
-          <p className="text-sm font-medium">{t("cards.owners", { ns: "views/organization" })}</p>
-          <div className="max-h-40 space-y-1 overflow-y-auto">
-            {faceNames.length === 0 && <p className="text-sm text-muted-foreground">{t("cards.noFaces", { ns: "views/organization" })}</p>}
-            {faceNames.map((name) => (
-              <label key={name} className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={selectedFaces.includes(name)}
-                  onChange={(event) => setSelectedFaces((current) => event.target.checked ? [...current, name] : current.filter((value) => value !== name))}
-                />
-                {name}
-              </label>
-            ))}
-          </div>
-          <DialogFooter>
-            {editingCard && <Button variant="outline" onClick={() => { setEditingCard(null); setCardNumber(""); setSelectedFaces([]); }}>{t("button.cancel", { ns: "common" })}</Button>}
-            <Button onClick={save} disabled={saving || !cardNumber.trim() || selectedFaces.length === 0}>
-              {t("button.save", { ns: "common" })}
-            </Button>
-          </DialogFooter>
-        </div>
       </DialogContent>
     </Dialog>
   );
