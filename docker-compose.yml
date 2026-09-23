@@ -36,6 +36,8 @@ services:
     environment:
       YOLO_MODELS: ""
 
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
   mqtt:
     container_name: mqtt
     image: eclipse-mosquitto:2.0

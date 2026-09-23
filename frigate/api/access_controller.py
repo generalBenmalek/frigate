@@ -156,7 +156,7 @@ def update_access_controller(device_id: str, body: AccessControllerUpdateBody):
         device.password = str(body.password or "")
     if body.name is not None:
         device.name = str(body.name or device.id)
-    if body.associated_camera is not None:
+    if "associated_camera" in body.model_fields_set:
         device.associated_camera = body.associated_camera
 
     device.save()

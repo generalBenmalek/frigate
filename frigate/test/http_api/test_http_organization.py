@@ -41,6 +41,7 @@ class TestHttpAccessController(BaseTestHttp):
                         "password": "secret",
                         "ip_address": "127.0.0.1",
                         "port": 80,
+                        "associated_camera": "front_door",
                     },
                 )
                 assert response.status_code == 200
@@ -48,6 +49,7 @@ class TestHttpAccessController(BaseTestHttp):
                 assert body["id"] == "ac_1"
                 assert body["name"] == "Door-1"
                 assert body["status"] == "online"
+                assert body["associated_camera"] == "front_door"
 
             response = client.get("/access-controllers")
             assert response.status_code == 200
@@ -60,12 +62,21 @@ class TestHttpAccessController(BaseTestHttp):
                     "port": 81,
                     "username": "",
                     "password": "",
+                    "associated_camera": "garage",
                 },
             )
             assert response.status_code == 200
             result = response.json()
             assert result["ip_address"] == "10.0.0.2"
             assert result["port"] == 81
+            assert result["associated_camera"] == "garage"
+
+            response = client.put(
+                "/access-controllers/ac_1",
+                json={"associated_camera": None},
+            )
+            assert response.status_code == 200
+            assert response.json()["associated_camera"] is None
 
             with patch(
                 "frigate.api.access_controller.DahuaAccessController.get_access_records",

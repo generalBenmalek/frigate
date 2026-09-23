@@ -48,7 +48,10 @@
     "password": "Password",
     "ipAddress": "IP Address",
     "port": "Port",
-    "nonAuth": "Leave username and password blank to use non-auth mode."
+    "nonAuth": "Leave username and password blank to use non-auth mode.",
+    "associatedCamera": "Associated Camera",
+    "associatedCameraPlaceholder": "Select a camera",
+    "noCamera": "No associated camera"
   },
   "delete": {
     "title": "Delete Access Controller",

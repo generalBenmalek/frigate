@@ -3,7 +3,9 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import useSWR from "swr";
+import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
 import { Button } from "@/components/ui/button";
+import { FrigateConfig } from "@/types/frigateConfig";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -62,6 +64,7 @@ type DeviceFormValues = {
   password: string;
   ipAddress: string;
   port: number;
+  associatedCamera: string;
 };
 
 type DeviceEditorState = {
@@ -120,6 +123,22 @@ export default function AccessControllerPage() {
     refreshInterval: 5000,
   });
 
+  const { data: config } = useSWR<FrigateConfig>("config", {
+    revalidateOnFocus: false,
+  });
+  const allowedCameras = useAllowedCameras();
+
+  const cameraOptions = useMemo(() => {
+    const cameraNames = allowedCameras.length > 0 ? allowedCameras : Object.keys(config?.cameras ?? {});
+
+    return cameraNames
+      .map((cameraName) => ({
+        value: cameraName,
+        label: config?.cameras?.[cameraName]?.friendly_name ?? cameraName,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [allowedCameras, config?.cameras]);
+
   useEffect(() => {
     if (controllersError) {
       toast.error(
@@ -155,6 +174,7 @@ export default function AccessControllerPage() {
       password: values.password,
       ip_address: values.ipAddress,
       port: values.port,
+      associated_camera: values.associatedCamera || null,
     };
 
     try {
@@ -413,6 +433,7 @@ export default function AccessControllerPage() {
         <DeviceEditorDialog
           mode={deviceEditor.mode}
           initialDevice={deviceEditor.device}
+          cameraOptions={cameraOptions}
           onClose={() => setDeviceEditor(null)}
           onSave={handleSave}
         />
@@ -443,6 +464,7 @@ export default function AccessControllerPage() {
 type DeviceEditorDialogProps = {
   mode: "create" | "edit";
   initialDevice: AccessControllerRecord | null;
+  cameraOptions: { value: string; label: string }[];
   onClose: () => void;
   onSave: (values: DeviceFormValues, mode: "create" | "edit") => Promise<void>;
 };
@@ -450,6 +472,7 @@ type DeviceEditorDialogProps = {
 function DeviceEditorDialog({
   mode,
   initialDevice,
+  cameraOptions,
   onClose,
   onSave,
 }: DeviceEditorDialogProps) {
@@ -461,6 +484,7 @@ function DeviceEditorDialog({
     password: initialDevice?.password ?? "",
     ipAddress: initialDevice?.ip_address ?? "",
     port: initialDevice?.port ?? 80,
+    associatedCamera: initialDevice?.associated_camera ?? "",
   });
 
   const handleSubmit = async (event: FormEvent) => {
@@ -532,6 +556,30 @@ function DeviceEditorDialog({
                 onChange={(event) => setValues({ ...values, port: Number(event.target.value) || 80 })}
                 required
               />
+            </div>
+            <div className="space-y-2 md:col-span-2">
+              <label className="text-sm font-medium">{t("dialog.associatedCamera", { ns: "views/organization" })}</label>
+              <Select
+                value={values.associatedCamera || "none"}
+                onValueChange={(value) =>
+                  setValues({
+                    ...values,
+                    associatedCamera: value === "none" ? "" : value,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={t("dialog.associatedCameraPlaceholder", { ns: "views/organization" })} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">{t("dialog.noCamera", { ns: "views/organization" })}</SelectItem>
+                  {cameraOptions.map((camera) => (
+                    <SelectItem key={camera.value} value={camera.value}>
+                      {camera.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <p className="text-xs text-muted-foreground">{t("dialog.nonAuth", { ns: "views/organization" })}</p>
