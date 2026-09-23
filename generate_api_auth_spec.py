@@ -47,8 +47,8 @@ from fastapi.routing import APIRoute
 from ruamel.yaml import YAML
 from ruamel.yaml.scalarstring import LiteralScalarString
 
-from frigate.api import app as main_app
 from frigate.api import (
+    access_controller,
     auth,
     camera,
     chat,
@@ -63,6 +63,7 @@ from frigate.api import (
     record,
     review,
 )
+from frigate.api import app as main_app
 from frigate.api.auth import require_admin_by_default
 
 logging.basicConfig(level=logging.INFO, format="%(message)s")
@@ -143,6 +144,7 @@ def build_app() -> FastAPI:
     """
     app = FastAPI()
     routers = [
+        access_controller.router,
         auth.router,
         camera.router,
         chat.router,

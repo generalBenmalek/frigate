@@ -57,6 +57,9 @@ from frigate.jobs.export import reap_stale_exports
 from frigate.jobs.motion_search import stop_all_motion_search_jobs
 from frigate.log import _stop_logging
 from frigate.models import (
+    AccessCardOwner,
+    AccessControl,
+    AccessEvent,
     Event,
     Export,
     Previews,
@@ -67,7 +70,6 @@ from frigate.models import (
     Timeline,
     Trigger,
     User,
-    AccessControl
 )
 from frigate.object_detection.base import ObjectDetectProcess
 from frigate.output.output import OutputProcess
@@ -273,6 +275,8 @@ class FrigateApp:
             load_vec_extension=True,
         )
         models = [
+            AccessCardOwner,
+            AccessEvent,
             Event,
             Export,
             Previews,

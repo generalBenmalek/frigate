@@ -244,6 +244,34 @@ class AccessControl(Model):
         max_length=100,
     )
 
+    seconds_before = IntegerField(default=10)
+    seconds_after = IntegerField(default=10)
+    last_checked_at = FloatField(null=True)
+    event_tracking_started_at = FloatField(null=True)
+    last_event_poll = FloatField(null=True)
+
+
+class AccessCardOwner(Model):
+    device_id = CharField(max_length=30, index=True)
+    card_number = CharField(max_length=100)
+    face_name = CharField(max_length=100)
+
+    class Meta:
+        indexes = ((('device_id', 'card_number', 'face_name'), True),)
+
+
+class AccessEvent(Model):
+    id = CharField(primary_key=True, max_length=64)
+    device_id = CharField(max_length=30, index=True)
+    occurred_at = FloatField(index=True)
+    card_number = CharField(max_length=100, null=True)
+    raw_record = JSONField()
+    verification_status = CharField(max_length=20, default="unverified")
+    people = JSONField(default=list)
+    camera = CharField(max_length=100, null=True)
+    seconds_before = IntegerField(default=10)
+    seconds_after = IntegerField(default=10)
+
     class Meta:
         table_name = "access_control"
 

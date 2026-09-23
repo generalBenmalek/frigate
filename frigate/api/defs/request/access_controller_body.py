@@ -9,6 +9,8 @@ class AccessControllerBody(BaseModel):
     username: str | None = Field(default=None, max_length=100)
     password: str | None = Field(default=None, max_length=255)
     associated_camera: str | None = Field(default=None, max_length=100)
+    seconds_before: int = Field(default=10, ge=0, le=300)
+    seconds_after: int = Field(default=10, ge=0, le=300)
 
 
 class AccessControllerUpdateBody(BaseModel):
@@ -17,4 +19,12 @@ class AccessControllerUpdateBody(BaseModel):
     port: int | None = Field(default=None, ge=1, le=65535)
     username: str | None = Field(default=None, max_length=100)
     password: str | None = Field(default=None, max_length=255)
+    clear_credentials: bool = False
     associated_camera: str | None = Field(default=None, max_length=100)
+    seconds_before: int | None = Field(default=None, ge=0, le=300)
+    seconds_after: int | None = Field(default=None, ge=0, le=300)
+
+
+class AccessCardOwnerBody(BaseModel):
+    card_number: str = Field(min_length=1, max_length=100)
+    face_names: list[str] = Field(min_length=1)

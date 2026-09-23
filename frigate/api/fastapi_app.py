@@ -1,9 +1,10 @@
 import asyncio
 import logging
 import re
+from contextlib import suppress
 
 from fastapi import Depends, FastAPI, Request
-from fastapi.middleware.cors import CORSMiddleware # ADDED
+from fastapi.middleware.cors import CORSMiddleware  # ADDED
 from fastapi.responses import JSONResponse
 from joserfc.jwk import OctKey
 from playhouse.sqliteq import SqliteQueueDatabase
@@ -13,9 +14,9 @@ from slowapi.middleware import SlowAPIMiddleware
 from starlette_context import middleware, plugins
 from starlette_context.plugins import Plugin
 
-from frigate.api import app as main_app
-from frigate.models import AccessControl
+from frigate.access_controller_service import run_controller_polling
 from frigate.api import (
+    access_controller,
     auth,
     camera,
     chat,
@@ -23,7 +24,6 @@ from frigate.api import (
     debug_replay,
     event,
     export,
-    access_controller,
     media,
     motion_search,
     notification,
@@ -31,6 +31,7 @@ from frigate.api import (
     record,
     review,
 )
+from frigate.api import app as main_app
 from frigate.api.auth import get_jwt_secret, limiter, require_admin_by_default
 from frigate.comms.dispatcher import Dispatcher
 from frigate.comms.event_metadata_updater import (
@@ -132,17 +133,20 @@ def create_fastapi_app(
     @app.on_event("startup")
     async def startup():
         logger.info("FastAPI started")
-        # for device in AccessControl.select():
-        #     try:
-        #         from frigate.api.access_controller import _probe_device
-        #         _probe_device(device)
-        #     except Exception:
-        #         logger.exception("Unable to refresh access controller %s at startup", device.id)
+        app.state.access_controller_task = asyncio.create_task(run_controller_polling())
         asyncio.create_task(
             debug_replay_auto_stop_watchdog(
                 replay_manager, frigate_config, config_publisher
             )
         )
+
+    @app.on_event("shutdown")
+    async def stop_access_controller_polling():
+        task = getattr(app.state, "access_controller_task", None)
+        if task is not None:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
 
     # Rate limiter (used for login endpoint)
     if frigate_config.auth.failed_login_rate_limit is None:
