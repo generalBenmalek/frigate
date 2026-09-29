@@ -40,6 +40,24 @@ routes used by the existing adapter: `magicBox.cgi`, `configManager.cgi`,
 remain unavailable. Existing `/sim/status`, `/sim/online`, `/sim/offline`, and
 `/sim/event` paths remain for the former desktop utility.
 
+CGI access records use the ASI2201H-W field shapes: zero-based `Door`, numeric
+`Status` and `Method`, `ReaderID`, `Type`, `ErrorCode`, and Unix timestamps.
+The access form selects card, multi-card, fingerprint, face, or password
+methods. Live CGI events contain multiline JSON and honor `codes=[All]` or
+selected codes. Historical CGI queries honor the time bounds, count, and
+`condition.UserID`, `condition.CardNo`, `condition.Door`, `condition.ReaderID`,
+and `condition.Type`. Device identity actions also include `getMachineName`,
+`getSerialNo`, `getSoftwareVersion`, and `getHardwareVersion`.
+CGI wall-clock search bounds use `Africa/Algiers` by default; set
+`DAHUA_SIM_TIMEZONE` to match a controller in another timezone.
+
+Frigate's access-controller Events tab loads controller history on demand and
+receives subsequent access and verification updates over its existing
+WebSocket connection. The twelve reference columns and six filters share the
+configured UI timezone. Select a row to see camera verification and footage
+in the separate selected-event section. Device failures retain stored history;
+unsupported or incomplete CGI pagination produces a visible history warning.
+
 ## Debugger
 
 Enter a device address, credentials, provider, and CGI event endpoint. Each

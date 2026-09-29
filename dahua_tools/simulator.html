@@ -22,6 +22,7 @@
       <label>Door <select name="door_id" id="accessDoor"></select></label>
       <label>Card number <input name="card_number" placeholder="Existing or unknown card"></label>
       <label>Result <select name="result"><option value="auto">Automatic rules</option><option value="grant">Force grant</option><option value="deny">Force denial</option></select></label>
+      <label>Verification method <select name="method"><option value="2">Card (2)</option><option value="10">Card (10)</option><option value="11">Multi-card (11)</option><option value="1">Fingerprint (1)</option><option value="3">Face (3)</option><option value="0">Password (0)</option></select></label>
       <label><input type="checkbox" name="live" checked> Live event and door action</label>
       <label>Historical timestamp (optional) <input type="datetime-local" name="timestamp"></label>
       <button>Generate event</button>
@@ -52,7 +53,7 @@
       $('events').replaceChildren();for(const event of data.events)addRow($('events'),`${new Date(event.timestamp*1000).toLocaleString()} | ${event.code} | door ${event.door_id} | ${event.card_number||'no card'} | ${event.user_name||'no user'} | ${event.result}`,[]);
     }
     $('controllerForm').onsubmit=event=>{event.preventDefault();const form=event.target;action(()=>api('PUT','/api/controller',{name:form.elements.name.value,model:form.elements.model.value,serial:form.elements.serial.value,firmware:form.elements.firmware.value,online:form.elements.online.checked}));};
-    $('accessForm').onsubmit=event=>{event.preventDefault();const form=event.target;const time=form.elements.timestamp.value;action(()=>api('POST','/api/events',{door_id:Number(form.elements.door_id.value),card_number:form.elements.card_number.value||null,result:form.elements.result.value,live:form.elements.live.checked,timestamp:time?new Date(time).getTime()/1000:null}));};
+    $('accessForm').onsubmit=event=>{event.preventDefault();const form=event.target;const time=form.elements.timestamp.value;action(()=>api('POST','/api/events',{door_id:Number(form.elements.door_id.value),card_number:form.elements.card_number.value||null,result:form.elements.result.value,method:Number(form.elements.method.value),live:form.elements.live.checked,timestamp:time?new Date(time).getTime()/1000:null}));};
     $('addDoor').onclick=()=>action(async()=>{const name=value('New door name','New door');if(name!==null)await api('POST','/api/doors',{name,online:true,status:'closed'});});
     $('addUser').onclick=()=>action(async()=>{const name=value('New user name','');if(name)await api('POST','/api/users',{name,active:true});});
     $('addCard').onclick=()=>action(async()=>{const number=value('New card number','');if(!number)return;const name=value('Card name','');if(name===null)return;const owners=value('User IDs, comma separated','');if(owners===null)return;await api('POST','/api/cards',{number,name,active:true,user_ids:owners.split(',').filter(Boolean).map(Number)});});

@@ -85,6 +85,18 @@ class TestClassifyOutbound(unittest.TestCase):
     def _classify(self, topic: str) -> tuple[str, Any]:
         return _classify_outbound(topic, self.all_cameras, self.all_zones)
 
+    def test_access_controller_topics_require_admin_even_for_full_camera_access(self):
+        for topic in ("access_controller_events", "access_controller_status"):
+            scope = self._classify(topic)
+            self.assertEqual(scope, ("admin", None))
+            for role in (None, "viewer", "house_only"):
+                self.assertIsNone(_materialize_for_ws(
+                    _ws(role), topic, "message", scope, None, self.config,
+                ))
+            self.assertEqual(_materialize_for_ws(
+                _ws("admin"), topic, "message", scope, None, self.config,
+            ), "message")
+
     # --- Global allowlist ---
 
     def test_model_state_is_global(self):

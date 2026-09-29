@@ -133,7 +133,9 @@ def create_fastapi_app(
     @app.on_event("startup")
     async def startup():
         logger.info("FastAPI started")
-        app.state.access_controller_task = asyncio.create_task(run_controller_polling())
+        app.state.access_controller_task = asyncio.create_task(
+            run_controller_polling(dispatcher.publish_websocket if dispatcher else None)
+        )
         asyncio.create_task(
             debug_replay_auto_stop_watchdog(
                 replay_manager, frigate_config, config_publisher

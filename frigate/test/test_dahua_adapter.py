@@ -1,11 +1,13 @@
 """Tests for Dahua provider parsing and normalized access events."""
 
 import unittest
+import json
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 from frigate.dahua_adapter import (
     CgiProvider,
+    CgiEventParser,
     DahuaAccessController,
     DahuaConnection,
     DahuaNotSupported,
@@ -45,7 +47,7 @@ class TestDahuaAdapter(unittest.IsolatedAsyncioTestCase):
         calls: list[int] = []
 
         async def page(_operation, _path, params):
-            start_index = params["StartIndex"]
+            start_index = params.get("StartIndex", 0)
             calls.append(start_index)
             text = ["totalCount=250", "found=100"]
             count = min(100, 250 - start_index)
@@ -65,19 +67,90 @@ class TestDahuaAdapter(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(records[0]["CardNo"], "000")
         self.assertEqual(records[-1]["RecNo"], "249")
 
-    async def test_history_repeated_page_fails_instead_of_returning_partial_data(self):
+    async def test_history_repeated_page_preserves_records_and_marks_incomplete(self):
         repeated_fields = ["totalCount=150", "found=100"]
         for index in range(100):
             repeated_fields.append(f"records[{index}].RecNo={index}")
         repeated = "\n".join(repeated_fields)
-        with (
-            patch.object(self.provider, "_text", new=AsyncMock(return_value=repeated)),
-            self.assertRaises(DahuaOperationError),
-        ):
-            await self.provider.get_access_records(
+        with patch.object(self.provider, "_text", new=AsyncMock(return_value=repeated)):
+            records = await self.provider.get_access_records(
                 datetime(2026, 1, 1, tzinfo=UTC),
                 datetime(2026, 1, 2, tzinfo=UTC),
             )
+        self.assertEqual(len(records), 100)
+        self.assertTrue(self.provider.history_incomplete)
+
+    async def test_asi_system_info_uses_separate_identity_actions(self):
+        responses = {
+            "getSystemInfo": "deviceType=DHI-ASI2201H-W\nserialNumber=SN-1",
+            "getMachineName": "name=Lobby",
+            "getSerialNo": "sn=SN-1",
+            "getSoftwareVersion": "version=1.000.R,build:2022-07-27",
+            "getHardwareVersion": "version=1.00",
+        }
+
+        async def response(_operation, _path, params):
+            return responses[params["action"]]
+
+        with patch.object(self.provider, "_text", side_effect=response):
+            info = await self.provider.get_system_info()
+        self.assertEqual(info["device_name"], "Lobby")
+        self.assertEqual(info["firmware_version"], "1.000.R,build:2022-07-27")
+        self.assertEqual(info["hardware_version"], "1.00")
+
+    async def test_unbounded_history_uses_observed_find_request(self):
+        with patch.object(self.provider, "_text", new=AsyncMock(return_value="found=0")) as request:
+            await self.provider.get_access_records(None, None, count=500)
+        self.assertEqual(request.call_args.args[2], {
+            "action": "find", "name": "AccessControlCardRec", "count": 500,
+        })
+
+    def test_live_parser_keeps_multiline_nested_json_across_every_chunk_boundary(self):
+        data = {
+            "CardName": 'Alice; {quoted} "name"', "CardNo": "000ABC", "Door": 0,
+            "nested": {"values": [{"text": "escaped \\ brace }"}]},
+        }
+        frame = "Code=AccessControl;action=Pulse;index=0;data=" + json.dumps(data, indent=2)
+        for split in range(1, len(frame)):
+            parser = CgiEventParser()
+            self.assertEqual(parser.feed(frame[:split]), [])
+            parsed = parser.feed(frame[split:])
+            self.assertEqual(len(parsed), 1)
+            self.assertEqual(parsed[0]["data"], data)
+
+    def test_live_parser_handles_headers_heartbeats_and_multiple_frames(self):
+        frame = 'Code=AccessControl;action=Pulse;index=0;data={"Door":0}'
+        parser = CgiEventParser()
+        result = parser.feed("--boundary\r\nContent-Type: text/plain\r\nheartbeat\r\n" + frame + "\n" + frame)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(result[0]["data"]["Door"], 0)
+
+    def test_live_parser_recovers_after_an_unclosed_frame(self):
+        parser = CgiEventParser()
+        frame = 'Code=AccessControl;action=Pulse;index=0;data={"Door":0}'
+        result = parser.feed('Code=AccessControl;action=Pulse;index=0;data={"Door":\n' + frame)
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["data"], {"Door": 0})
+
+    def test_normalization_preserves_zeroes_identifiers_and_error_precedence(self):
+        event = DahuaAccessController.normalize_event({"code": "AccessControl", "data": {
+            "RealUTC": 1790665389000, "CardNo": "000ABC", "UserID": "001",
+            "Door": 0, "ReaderID": "1", "Method": 11, "Status": 1,
+            "ErrorCode": 16, "Type": "Entry",
+        }}, "controller")
+        self.assertEqual(event["timestamp"], 1790665389)
+        self.assertEqual(event["door_id"], 0)
+        self.assertEqual(event["user_id"], "001")
+        self.assertEqual(event["card_number"], "000ABC")
+        self.assertEqual(event["authentication_method"], 11)
+        self.assertEqual(event["status"], "Failed")
+        self.assertEqual(event["error_code"], 16)
+
+    def test_normalization_uses_utc_when_create_time_is_invalid(self):
+        event = DahuaAccessController.normalize_event({
+            "CreateTime": "invalid", "RealUTC": 1790665389,
+        }, "controller")
+        self.assertEqual(event["timestamp"], 1790665389)
 
     async def test_card_owner_lookup_preserves_card_number_and_names(self):
         response = (

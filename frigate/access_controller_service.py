@@ -1,10 +1,12 @@
-"""Poll access controllers and verify card scans against Frigate events."""
+"""Ingest controller streams and history and verify scans against camera events."""
 
 import asyncio
 import hashlib
 import json
 import logging
+import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -22,9 +24,15 @@ from frigate.models import (
 logger = logging.getLogger(__name__)
 POLL_INTERVAL_SECONDS = 10
 HISTORY_SECONDS = 24 * 60 * 60
+_publisher: Callable[[str, str], None] | None = None
+_stream_states: dict[str, str] = {}
+_history_locks: dict[str, asyncio.Lock] = {}
+_record_locks: dict[str, threading.RLock] = {}
 
 
-def build_controller(device: AccessControl) -> DahuaAccessController:
+def build_controller(
+    device: AccessControl, diagnostic: Callable[[dict], None] | None = None
+) -> DahuaAccessController:
     """Create a Dahua client for a saved controller."""
     username = (device.username or "").strip()
     password = (device.password or "").strip()
@@ -38,7 +46,43 @@ def build_controller(device: AccessControl) -> DahuaAccessController:
         scheme="https" if device.use_https else "http",
         sdk_port=int(device.sdk_port or 37777),
         provider_options=device.provider_options or {},
+        diagnostic=diagnostic,
     )
+
+
+def controller_stream_state(device_id: str) -> str:
+    """Return the upstream listener's current connection state."""
+    return _stream_states.get(device_id, "connecting")
+
+
+def _set_stream_state(device_id: str, state: str) -> None:
+    _stream_states[device_id] = state
+    if _publisher is not None:
+        _publisher("access_controller_status", json.dumps({"device_id": device_id, "state": state}))
+
+
+def serialize_access_event(event: AccessEvent, device_name: str | None = None) -> dict:
+    """Share the same event representation between history and live messages."""
+    raw = DahuaAccessController.sanitize_raw_event({
+        key: value for key, value in event.raw_record.items() if not key.startswith("_")
+    })
+    normalized = DahuaAccessController.normalize_event(raw, event.device_id)
+    return {
+        **raw, **normalized,
+        "id": event.id, "device_id": event.device_id,
+        "device_name": device_name or event.device_id,
+        "timestamp": event.occurred_at, "card_number": event.card_number,
+        "owner_names": event.raw_record.get("_owner_names") or DahuaAccessController.record_names(raw),
+        "verification_status": event.verification_status, "people": event.people,
+        "camera": event.camera,
+        "clip_start": event.occurred_at - event.seconds_before,
+        "clip_end": event.occurred_at + event.seconds_after,
+    }
+
+
+def _publish_event(event: AccessEvent, device_name: str | None = None) -> None:
+    if _publisher is not None:
+        _publisher("access_controller_events", json.dumps(serialize_access_event(event, device_name)))
 
 
 def probe_device_with_info(device: AccessControl) -> tuple[AccessControl, dict | None]:
@@ -102,30 +146,6 @@ def probe_device(device: AccessControl) -> AccessControl:
     return probe_device_with_info(device)[0]
 
 
-def _record_time(row: dict) -> float | None:
-    value = (
-        row.get("CreateTime")
-        or row.get("Time")
-        or row.get("time")
-        or row.get("datetime")
-        or row.get("timestamp")
-    )
-    if isinstance(value, (int, float)):
-        return float(value)
-    if not isinstance(value, str) or not value:
-        return None
-    try:
-        return float(value)
-    except ValueError:
-        pass
-    try:
-        # Dahua timestamps are local wall time, matching the server timezone.
-        return datetime.fromisoformat(value).timestamp()
-    except ValueError:
-        logger.warning("Ignoring access record with invalid timestamp")
-        return None
-
-
 def _timestamp(value: datetime | float | None) -> float | None:
     if value is None:
         return None
@@ -138,16 +158,16 @@ def _detected_names(person: dict) -> set[str]:
 
 def _access_granted_card_scan(row: dict) -> bool:
     """Select successful card scans, excluding denied and non-card events."""
-    if not (row.get("CardNo") or row.get("card_number")):
+    normalized = DahuaAccessController.normalize_event(row, "")
+    if not normalized["card_number"]:
         return False
-    method = row.get("Method")
-    if method is not None and str(method) not in {"1", "2", "3"}:
+    method = normalized["authentication_method"]
+    if method is not None and str(method).casefold() not in {"2", "10", "11", "card"}:
         return False
-    status = row.get("Status")
-    if status is None:
-        status = row.get("access_status")
-    if status is not None:
-        return str(status).strip().casefold() in {"1", "true", "success", "succeeded"}
+    if normalized["status"] == "Failed":
+        return False
+    if normalized["access_status"] is not None:
+        return normalized["status"] == "OK"
     event_type = str(row.get("EventType") or row.get("event_code") or "").casefold()
     return event_type in {"accessgranted", "accessallowed"}
 
@@ -155,18 +175,41 @@ def _access_granted_card_scan(row: dict) -> bool:
 def _store_record(
     device: AccessControl, row: dict, owner_names: list[str], owners_complete: bool
 ) -> None:
+    with _record_locks.setdefault(device.id, threading.RLock()):
+        _store_record_locked(device, row, owner_names, owners_complete)
+
+
+def _store_record_locked(
+    device: AccessControl, row: dict, owner_names: list[str], owners_complete: bool
+) -> None:
     row = DahuaAccessController.sanitize_raw_event(row)
-    occurred_at = _record_time(row)
+    normalized = DahuaAccessController.normalize_event(row, device.id)
+    occurred_at = normalized["timestamp"]
     if occurred_at is None:
         return
-    card_number = str(row.get("CardNo") or row.get("card_number") or "").strip()
-    fingerprint = hashlib.sha256(
-        f"{device.id}:{json.dumps(row, sort_keys=True, default=str)}".encode()
-    ).hexdigest()
+    card_number = normalized["card_number"] or ""
     is_new_scan = _access_granted_card_scan(row) and occurred_at >= (
         device.event_tracking_started_at or 0
     )
-    normalized = DahuaAccessController.normalize_event(row, device.id)
+    identity = _event_identity(normalized)
+    record_number = normalized["record_number"]
+    candidates = AccessEvent.select().where(
+        (AccessEvent.device_id == device.id) & (AccessEvent.occurred_at == occurred_at)
+    )
+    existing = None
+    for candidate in candidates:
+        candidate_normalized = DahuaAccessController.normalize_event(candidate.raw_record, device.id)
+        candidate_number = candidate_normalized["record_number"]
+        if record_number is not None and candidate_number is not None:
+            if str(record_number) == str(candidate_number):
+                existing = candidate
+                break
+        elif _event_identity(candidate_normalized) == identity:
+            existing = candidate
+            break
+    fingerprint = existing.id if existing is not None else hashlib.sha256(
+        json.dumps([device.id, occurred_at, identity, record_number], default=str).encode()
+    ).hexdigest()
     record = {
         **row,
         **normalized,
@@ -174,6 +217,21 @@ def _store_record(
         "_owner_names": owner_names,
         "_owner_names_complete": owners_complete,
     }
+    if existing is not None:
+        # Keep the live row's ID, verification result, and camera window when
+        # a historical record later supplies a RecNo or more event details.
+        merged = {
+            **existing.raw_record,
+            **{key: value for key, value in record.items() if value not in (None, "")},
+        }
+        if not owner_names:
+            merged["_owner_names"] = existing.raw_record.get("_owner_names", [])
+            merged["_owner_names_complete"] = existing.raw_record.get("_owner_names_complete", False)
+        if existing.raw_record != merged:
+            existing.raw_record = merged
+            existing.save(only=[AccessEvent.raw_record])
+            _publish_event(existing, device.name)
+        return
     AccessEvent.insert(
         id=fingerprint,
         device_id=device.id,
@@ -186,6 +244,15 @@ def _store_record(
         seconds_before=device.seconds_before,
         seconds_after=device.seconds_after,
     ).on_conflict_ignore().execute()
+    saved = AccessEvent.get_by_id(fingerprint)
+    _publish_event(saved, device.name)
+
+
+def _event_identity(normalized: dict) -> tuple[str, ...]:
+    """Match live JSON and string-valued historical representations."""
+    return tuple(str(normalized.get(key) if normalized.get(key) is not None else "").casefold()
+                 for key in ("door_id", "reader_id", "card_number", "user_id",
+                             "status", "authentication_method", "type"))
 
 
 def _store_live_event(device_id: str, event: dict) -> None:
@@ -194,6 +261,8 @@ def _store_live_event(device_id: str, event: dict) -> None:
     if device is None:
         return
     normalized = DahuaAccessController.normalize_event(event, device_id)
+    if normalized["event_code"] != "AccessControl":
+        return
     if normalized["timestamp"] is None:
         normalized["timestamp"] = time.time()
         normalized["timestamp_source"] = "received_at"
@@ -209,6 +278,43 @@ def _store_live_event(device_id: str, event: dict) -> None:
         DahuaAccessController.record_names(record),
         bool(DahuaAccessController.record_names(record)),
     )
+
+
+async def synchronize_controller_history(
+    device_id: str | None = None, start: datetime | None = None,
+    end: datetime | None = None, count: int = 500,
+) -> list[dict]:
+    """Import history on demand, retaining stored events on device failures."""
+    devices = await asyncio.to_thread(
+        lambda: list(AccessControl.select().where(AccessControl.id == device_id))
+        if device_id else list(AccessControl.select())
+    )
+    semaphore = asyncio.Semaphore(8)
+
+    async def sync(device: AccessControl) -> dict:
+        lock = _history_locks.setdefault(device.id, asyncio.Lock())
+        async with semaphore, lock:
+            controller = build_controller(device)
+            try:
+                records = await controller.get_access_history_async(start, end, count=count)
+            except (requests.RequestException, ValueError) as err:
+                logger.warning("Unable to synchronize history for %s: %s", device.id, err)
+                return {"device_id": device.id, "success": False, "incomplete": False}
+            await asyncio.to_thread(_ingest_history, device, records)
+            incomplete = getattr(controller.provider, "history_incomplete", False) is True
+            return {"device_id": device.id, "success": True, "count": len(records), "incomplete": incomplete}
+
+    return await asyncio.gather(*(sync(device) for device in devices))
+
+
+def _ingest_history(device: AccessControl, records: list[dict]) -> None:
+    if device.event_tracking_started_at is None:
+        device.event_tracking_started_at = time.time()
+    for row in records:
+        names = DahuaAccessController.record_names(row)
+        _store_record(device, row, names, bool(names))
+    device.last_event_poll = time.time()
+    device.save(only=[AccessControl.last_event_poll, AccessControl.event_tracking_started_at])
 
 
 def poll_controller(device_id: str) -> AccessControl | None:
@@ -367,6 +473,8 @@ def verify_pending_events() -> None:
         else:
             access_event.verification_status = "unknown"
         access_event.save()
+        device = AccessControl.get_or_none(AccessControl.id == access_event.device_id)
+        _publish_event(access_event, device.name if device else None)
 
 
 async def poll_all_controllers() -> list[AccessControl | None]:
@@ -381,7 +489,8 @@ async def poll_all_controllers() -> list[AccessControl | None]:
     async def poll(device_id: str) -> AccessControl | None:
         async with semaphore:
             try:
-                return await asyncio.to_thread(poll_controller, device_id)
+                device = await asyncio.to_thread(AccessControl.get_or_none, AccessControl.id == device_id)
+                return await asyncio.to_thread(probe_device, device) if device else None
             except Exception:
                 logger.exception("Unable to poll access controller %s", device_id)
                 return await asyncio.to_thread(_mark_poll_error, device_id)
@@ -389,27 +498,39 @@ async def poll_all_controllers() -> list[AccessControl | None]:
     return await asyncio.gather(*(poll(device_id) for device_id in ids))
 
 
-async def run_controller_polling() -> None:
+async def run_controller_polling(
+    publisher: Callable[[str, str], None] | None = None,
+) -> None:
     """Refresh controller status and process scans throughout API uptime."""
-    await asyncio.sleep(POLL_INTERVAL_SECONDS)
+    global _publisher
+    _publisher = publisher
     listener_tasks: dict[str, asyncio.Task] = {}
+    signatures: dict[str, tuple] = {}
     try:
         while True:
             try:
-                device_ids = await asyncio.to_thread(
-                    lambda: [
-                        device.id for device in AccessControl.select(AccessControl.id)
-                    ]
-                )
-                for stopped_id, task in list(listener_tasks.items()):
-                    if task.done():
-                        listener_tasks.pop(stopped_id)
-                for removed_id in listener_tasks.keys() - set(device_ids):
-                    listener_tasks.pop(removed_id).cancel()
-                for device_id in device_ids:
-                    if device_id not in listener_tasks:
-                        listener_tasks[device_id] = asyncio.create_task(
-                            _listen_to_controller(device_id)
+                devices = await asyncio.to_thread(lambda: list(AccessControl.select()))
+                current = {
+                    device.id: (device.ip_address, device.port, device.username,
+                                device.password, device.provider, device.sdk_port,
+                                device.use_https, json.dumps(device.provider_options, sort_keys=True))
+                    for device in devices
+                }
+                for device_id, task in list(listener_tasks.items()):
+                    if task.done() or current.get(device_id) != signatures.get(device_id):
+                        task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                        listener_tasks.pop(device_id)
+                        signatures.pop(device_id, None)
+                        _stream_states.pop(device_id, None)
+                for device in devices:
+                    if device.id not in listener_tasks:
+                        if device.event_tracking_started_at is None:
+                            device.event_tracking_started_at = time.time()
+                            await asyncio.to_thread(device.save, only=[AccessControl.event_tracking_started_at])
+                        signatures[device.id] = current[device.id]
+                        listener_tasks[device.id] = asyncio.create_task(
+                            _listen_to_controller(device.id)
                         )
                 await poll_all_controllers()
                 await asyncio.to_thread(verify_pending_events)
@@ -422,6 +543,9 @@ async def run_controller_polling() -> None:
         for task in listener_tasks.values():
             task.cancel()
         await asyncio.gather(*listener_tasks.values(), return_exceptions=True)
+        _publisher = None
+        _stream_states.clear()
+        _history_locks.clear()
 
 
 async def _listen_to_controller(device_id: str) -> None:
@@ -433,7 +557,7 @@ async def _listen_to_controller(device_id: str) -> None:
         if device is None:
             return
         try:
-            controller = build_controller(device)
+            await asyncio.to_thread(_set_stream_state, device_id, "connecting")
             queue: asyncio.Queue[dict] = asyncio.Queue(maxsize=1000)
             loop = asyncio.get_running_loop()
 
@@ -449,8 +573,15 @@ async def _listen_to_controller(device_id: str) -> None:
             def enqueue(event: dict, current_loop=loop, push_event=put_event) -> None:
                 current_loop.call_soon_threadsafe(push_event, event)
 
+            def observe(detail: dict) -> None:
+                if detail.get("operation") == "listen_events" and detail.get("raw_response") == "<event stream connected>":
+                    enqueue({"_connected": True})
+
+            controller = build_controller(device, observe)
+
             listener = asyncio.create_task(controller.listen_events_async(enqueue))
             event_task: asyncio.Task | None = None
+            history_task: asyncio.Task | None = None
             try:
                 while True:
                     event_task = asyncio.create_task(queue.get())
@@ -459,20 +590,38 @@ async def _listen_to_controller(device_id: str) -> None:
                         return_when=asyncio.FIRST_COMPLETED,
                     )
                     if listener in completed:
-                        event_task.cancel()
-                        await listener
-                        return
+                        # Flush callbacks scheduled by the final stream chunk
+                        # before deciding that no more queued events remain.
+                        await asyncio.sleep(0)
+                        if not event_task.done():
+                            event_task.cancel()
+                            await asyncio.gather(event_task, return_exceptions=True)
+                            await listener
+                            raise ConnectionError("Controller event stream ended")
                     event = event_task.result()
                     event_task = None
+                    if controller_stream_state(device_id) != "live":
+                        await asyncio.to_thread(_set_stream_state, device_id, "live")
+                        # Reconcile the available archive after reconnecting,
+                        # without assuming the device's wall-clock timezone.
+                        history_task = asyncio.create_task(synchronize_controller_history(device_id))
+                    if event.get("_connected"):
+                        continue
                     await asyncio.to_thread(_store_live_event, device_id, event)
             finally:
                 if event_task is not None:
                     event_task.cancel()
                 listener.cancel()
-                await asyncio.gather(listener, return_exceptions=True)
+                if history_task is not None:
+                    history_task.cancel()
+                await asyncio.gather(
+                    listener, *(task for task in (event_task, history_task) if task is not None),
+                    return_exceptions=True,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as err:  # noqa: BLE001 - keep the background listener alive
+            await asyncio.to_thread(_set_stream_state, device_id, "reconnecting")
             diagnostics = (
                 err.as_dict()
                 if hasattr(err, "as_dict")
@@ -486,4 +635,4 @@ async def _listen_to_controller(device_id: str) -> None:
             logger.warning(
                 "Live event subscription failed for %s: %s", device_id, diagnostics
             )
-            await asyncio.sleep(30)
+            await asyncio.sleep(3)

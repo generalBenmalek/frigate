@@ -41,7 +41,63 @@
     "filter": "Device filter",
     "all": "All devices",
     "empty": "No events found for the selected device.",
+    "search": "Search",
+    "clear": "Clear",
+    "loading": "Loading events...",
+    "count_one": "{{count}} event",
+    "count_other": "{{count}} events",
+    "newestFirst": "Newest to oldest",
+    "door": "Door {{number}}",
+    "selectEvent": "Select event for {{name}} at {{time}}",
+    "invalidRange": "Enter a valid date range with From before To.",
+    "historyWarning": "Some controller history could not be retrieved completely. Available stored events are shown.",
+    "connection": {
+      "live": "Live",
+      "connecting": "Connecting...",
+      "reconnecting": "Reconnecting..."
+    },
+    "filters": {
+      "from": "From",
+      "to": "To",
+      "name": "Name",
+      "userId": "User ID",
+      "cardNo": "Card No",
+      "status": "Status",
+      "all": "All"
+    },
+    "results": { "OK": "OK", "Failed": "Failed" },
+    "descriptions": {
+      "denied": "Access denied",
+      "deniedError": "Access denied (Error {{code}})",
+      "granted": "Access granted",
+      "entry": "Access granted - Entry",
+      "exit": "Access granted - Exit",
+      "event": "Access event"
+    },
+    "methods": {
+      "password": "Password",
+      "fingerprint": "Fingerprint",
+      "card": "Card",
+      "face": "Face",
+      "multiCard": "Multi-card",
+      "unknown": "Method {{method}}"
+    },
+    "selected": {
+      "title": "Selected event",
+      "empty": "Select an event to view camera verification, detected people, and footage."
+    },
     "table": {
+      "name": "Name",
+      "userId": "User ID",
+      "status": "Status",
+      "description": "Event Description",
+      "door": "Door",
+      "readerId": "Reader ID",
+      "cardNo": "Card No",
+      "type": "Type",
+      "verifyMode": "Verify Mode",
+      "method": "Method",
+      "errorCode": "Error Code",
       "time": "Time",
       "device": "Device",
       "code": "Code",

@@ -12,6 +12,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, PlainTextResponse, Response, StreamingResponse
@@ -20,6 +21,7 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 DB_PATH = Path(os.environ.get("DAHUA_SIM_DB", "dahua_simulator.db"))
 PAGE = Path(__file__).with_name("simulator.html")
+DEVICE_TIMEZONE = ZoneInfo(os.environ.get("DAHUA_SIM_TIMEZONE", "Africa/Algiers"))
 
 
 class Store:
@@ -106,7 +108,7 @@ def initialize(conn: sqlite3.Connection) -> None:
         conn.execute("ALTER TABLE events ADD COLUMN card_name TEXT")
     conn.execute(
         "INSERT OR IGNORE INTO controller VALUES (1,?,?,?,?,?)",
-        ("SIM-AC-001", "DHI-ASI2201-H-W", "SIM123456789", "SIM-1.0.0", 1),
+        ("SIM-AC-001", "DHI-ASI2201H-W", "SIM123456789", "SIM-1.0.0", 1),
     )
     conn.execute("INSERT OR IGNORE INTO doors VALUES (1,'Front door',1,'closed')")
     conn.execute("INSERT OR IGNORE INTO doors VALUES (2,'Side door',1,'closed')")
@@ -164,6 +166,10 @@ class EventInput(BaseModel):
     result: str = Field(pattern="^(auto|grant|deny)$", default="auto")
     live: bool = True
     timestamp: float | None = None
+    method: int = Field(default=2, ge=0)
+    reader_id: str = "1"
+    event_type: str = Field(pattern="^(Entry|Exit)$", default="Entry")
+    error_code: int | None = Field(default=None, ge=0)
 
 
 def require_controller(conn: sqlite3.Connection) -> dict[str, Any]:
@@ -379,7 +385,7 @@ async def simulate_access(value: EventInput) -> dict[str, Any]:
             raise HTTPException(409, "Door is offline")
         if value.live and result == "grant":
             conn.execute("UPDATE doors SET status='open' WHERE id=?", (door["id"],))
-        return record_event(conn, code="AccessControl", door=door, result=result, method="card", card_number=value.card_number, card_name=card["name"] if card else None, user=user, timestamp=value.timestamp, details={"override": value.result != "auto", "eligible": eligible, "live": value.live})
+        return record_event(conn, code="AccessControl", door=door, result=result, method=str(value.method), card_number=value.card_number, card_name=card["name"] if card else None, user=user, timestamp=value.timestamp, details={"override": value.result != "auto", "eligible": eligible, "live": value.live, "ReaderID": value.reader_id, "Type": value.event_type, "ErrorCode": value.error_code if value.error_code is not None else (0 if result == "grant" else 16)})
     event = await store.run(save)
     if value.live:
         publish(event)
@@ -394,7 +400,7 @@ async def command_door(door_id: int, status: str) -> dict[str, Any]:
         if not controller["online"] or not door["online"]:
             raise HTTPException(503, "Controller or door is offline")
         conn.execute("UPDATE doors SET status=? WHERE id=?", (status, door_id))
-        return record_event(conn, code="DoorOpen" if status == "open" else "DoorClose", door=door, result=status, method="remote")
+        return record_event(conn, code="DoorStatus", door=door, result=status, method="remote")
     event = await store.run(save)
     publish(event)
     return event
@@ -455,10 +461,41 @@ async def online_controller() -> dict[str, Any]:
 async def magic_box(request: Request) -> PlainTextResponse:
     """Provide system information to the existing CGI adapter."""
     controller = await online_controller()
-    if request.query_params.get("action") != "getSystemInfo":
+    action = request.query_params.get("action")
+    actions = {
+        "getMachineName": {"name": controller["name"]},
+        "getSerialNo": {"sn": controller["serial"]},
+        "getSoftwareVersion": {"version": controller["firmware"]},
+        "getHardwareVersion": {"version": "1.00"},
+    }
+    if action in actions:
+        return PlainTextResponse(cgi_fields(actions[action]))
+    if action != "getSystemInfo":
         raise HTTPException(400, "Unsupported action")
     count = await store.run(lambda conn: conn.execute("SELECT COUNT(*) FROM doors").fetchone()[0])
-    return PlainTextResponse(cgi_fields({"manufacturer": "Simulated Dahua", "deviceType": controller["model"], "serialNumber": controller["serial"], "deviceName": controller["name"], "firmwareVersion": controller["firmware"], "channelNumber": count, "ipAddress": request.url.hostname or "127.0.0.1"}))
+    return PlainTextResponse(cgi_fields({"manufacturer": "Simulated Dahua", "deviceType": controller["model"], "serialNumber": controller["serial"], "hardwareVersion": "1.00", "channelNumber": count, "ipAddress": request.url.hostname or "127.0.0.1"}))
+
+
+def access_event_fields(event: dict[str, Any]) -> dict[str, Any]:
+    """Represent a simulator access event with observed Dahua CGI field types."""
+    details = event.get("details", {})
+    if isinstance(details, str):
+        details = json.loads(details)
+    method = event["method"]
+    return {
+        "RecNo": event["id"], "CardNo": event["card_number"] or "",
+        "CardName": event["card_name"] or "", "CardType": 0,
+        "UserID": str(event["user_id"]) if event["user_id"] is not None else "",
+        "UserName": event["user_name"] or "",
+        "CreateTime": int(event["timestamp"]),
+        "UTC": int(event["timestamp"]), "RealUTC": int(event["timestamp"]),
+        "Status": 1 if event["result"] == "grant" else 0,
+        "Method": 2 if method == "card" else int(method),
+        "Door": event["door_id"] - 1,
+        "ReaderID": details.get("ReaderID", "1"),
+        "ErrorCode": details.get("ErrorCode", 0 if event["result"] == "grant" else 16),
+        "Type": details.get("Type", "Entry"), "UserType": 0,
+    }
 
 
 @app.get("/cgi-bin/configManager.cgi")
@@ -494,7 +531,7 @@ async def record_finder(request: Request) -> PlainTextResponse:
     """Expose paged history and many-to-many card ownership to CGI clients."""
     await online_controller()
     params = request.query_params
-    if params.get("action") != "find":
+    if params.get("action") not in {"find", "doSeekFind"}:
         raise HTTPException(400, "Unsupported action")
     try:
         offset = max(0, int(params.get("StartIndex", "0")))
@@ -504,17 +541,28 @@ async def record_finder(request: Request) -> PlainTextResponse:
     name = params.get("name")
     def load(conn: sqlite3.Connection) -> tuple[int, list[dict[str, Any]]]:
         if name == "AccessControlCard":
-            number = params.get("condition.CardNo", "")
-            all_rows = rows(conn, "SELECT cards.number AS CardNo,users.name AS UserName,users.id AS UserID FROM cards JOIN card_users ON cards.number=card_users.card_number JOIN users ON users.id=card_users.user_id WHERE cards.number=? ORDER BY users.id", (number,))
+            all_rows = rows(conn, "SELECT cards.rowid AS RecNo,cards.number AS CardNo,cards.name AS CardName,users.name AS UserName,users.id AS UserID,cards.active AS IsValid FROM cards LEFT JOIN card_users ON cards.number=card_users.card_number LEFT JOIN users ON users.id=card_users.user_id ORDER BY cards.rowid,users.id")
         elif name == "AccessControlCardRec":
+            def bound(value: str | None, default: float) -> float:
+                if not value:
+                    return default
+                try:
+                    return float(value)
+                except ValueError:
+                    date = datetime.fromisoformat(value)
+                    return (date if date.tzinfo else date.replace(tzinfo=DEVICE_TIMEZONE)).timestamp()
             try:
-                start = float(params.get("StartTime", "0"))
-                end = float(params.get("EndTime", str(time.time())))
+                start = bound(params.get("StartTime"), 0)
+                end = bound(params.get("EndTime"), float("inf"))
             except ValueError as err:
                 raise HTTPException(400, "Invalid time range") from err
-            all_rows = rows(conn, "SELECT timestamp AS CreateTime,code AS EventType,door_id AS DoorID,card_number AS CardNo,card_name AS CardName,user_id AS UserID,user_name AS UserName,result AS Status,method AS Method FROM events WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp,id", (start, end))
+            all_rows = [access_event_fields(event) for event in rows(conn, "SELECT * FROM events WHERE code='AccessControl' AND timestamp BETWEEN ? AND ? ORDER BY timestamp,id", (start, end))]
         else:
             raise HTTPException(400, "Unsupported record type")
+        for key in ("UserID", "CardNo", "Door", "ReaderID", "Type"):
+            condition = params.get(f"condition.{key}")
+            if condition is not None:
+                all_rows = [row for row in all_rows if str(row.get(key, "")) == condition]
         return len(all_rows), all_rows[offset:offset + count]
     total, page = await store.run(load)
     fields: dict[str, Any] = {"found": len(page), "totalCount": total}
@@ -531,6 +579,7 @@ async def event_manager(request: Request) -> StreamingResponse:
     await online_controller()
     if request.query_params.get("action") != "attach":
         raise HTTPException(400, "Unsupported action")
+    codes = {code.strip() for code in request.query_params.get("codes", "[All]").strip("[]").split(",")}
     async def stream():
         queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue(maxsize=100)
         subscribers.add(queue)
@@ -542,8 +591,15 @@ async def event_manager(request: Request) -> StreamingResponse:
                 except TimeoutError:
                     yield "heartbeat\n"
                     continue
-                data = {"timestamp": event["timestamp"], "DoorID": event["door_id"], "CardNo": event["card_number"], "CardName": event["card_name"], "UserID": event["user_id"], "UserName": event["user_name"], "Status": event["result"], "Method": event["method"]}
-                yield f"Code={event['code']};action=Pulse;index={event['id']};data={json.dumps(data)}\n\n"
+                code = event["code"]
+                if "All" not in codes and code not in codes:
+                    continue
+                if code == "AccessControl":
+                    data = access_event_fields(event)
+                    data.pop("RecNo")
+                else:
+                    data = {"Status": "Open" if event["result"] == "open" else "Close", "UTC": int(event["timestamp"]), "RealUTC": int(event["timestamp"])}
+                yield f"Code={code};action=Pulse;index={event['door_id'] - 1};data={json.dumps(data, indent=2)}\n\n"
         finally:
             subscribers.discard(queue)
     return StreamingResponse(stream(), media_type="text/plain")

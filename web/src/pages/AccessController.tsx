@@ -4,6 +4,11 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import useSWR from "swr";
 import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
+import { useAccessControllerEvents } from "@/hooks/use-access-controller-events";
+import AccessEvents from "@/components/access/AccessEvents";
+import { emptyAccessEventFilters, type AccessEvent as EventRecord, type AccessEventFilters } from "@/types/accessController";
+import { accessFilterTimestamp } from "@/utils/accessController";
+import { getResolvedTimeZone } from "@/utils/dateUtil";
 import { baseUrl } from "@/api/baseUrl";
 import { Button } from "@/components/ui/button";
 import { GenericVideoPlayer } from "@/components/player/GenericVideoPlayer";
@@ -36,7 +41,6 @@ import {
   LuLock,
   LuLockOpen,
   LuPencil,
-  LuPlay,
   LuPlus,
   LuRotateCcw,
   LuTrash2,
@@ -61,27 +65,7 @@ type AccessControllerRecord = {
   associated_camera?: string | null;
   username?: string;
   password?: string;
-};
-
-type EventRecord = {
-  id: string;
-  device_id?: string;
-  device_name?: string;
-  time?: string;
-  Time?: string;
-  timestamp?: number | string;
-  Code?: string;
-  code?: string;
-  action?: string;
-  data?: Record<string, unknown> | string | null;
-  card_number?: string | null;
-  owner_names?: string[];
-  verification_status?: "pending" | "unverified" | "valid" | "warning" | "unknown";
-  people?: { event_id: string; name: string; start_time: number; end_time: number | null }[];
-  camera?: string | null;
-  clip_start?: number;
-  clip_end?: number;
-  [key: string]: unknown;
+  stream_state?: string;
 };
 
 type DeviceFormValues = {
@@ -147,6 +131,9 @@ export default function AccessControllerPage() {
   const { t } = useTranslation(["common", "views/organization"]);
   const [activeTab, setActiveTab] = useState<"controllers" | "events">("controllers");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("all");
+  const [draftFilters, setDraftFilters] = useState<AccessEventFilters>({ ...emptyAccessEventFilters });
+  const [appliedFilters, setAppliedFilters] = useState<AccessEventFilters>({ ...emptyAccessEventFilters });
+  const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [deviceEditor, setDeviceEditor] = useState<DeviceEditorState | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string } | null>(null);
   const [footageEvent, setFootageEvent] = useState<EventRecord | null>(null);
@@ -167,26 +154,18 @@ export default function AccessControllerPage() {
     refreshInterval: 5000,
   });
 
-  const eventKey = useMemo(
-    () =>
-      selectedDeviceId === "all"
-        ? "access-controllers/events"
-        : `access-controllers/events?device_id=${encodeURIComponent(selectedDeviceId)}`,
-    [selectedDeviceId],
-  );
-
-  const {
-    data: events,
-    mutate: refreshEvents,
-    error: eventsError,
-  } = useSWR<EventRecord[]>(eventKey, {
-    revalidateOnFocus: false,
-    refreshInterval: 5000,
-  });
-
   const { data: config } = useSWR<FrigateConfig>("config", {
     revalidateOnFocus: false,
   });
+  const timezone = config?.ui.timezone || getResolvedTimeZone();
+  const controllerKey = useMemo(
+    () => JSON.stringify((controllers ?? []).map((controller) => controller.id).sort()),
+    [controllers],
+  );
+  const {
+    events, refreshEvents, error: eventsError, loading: eventsLoading,
+    historyWarning, streamStates, socketState,
+  } = useAccessControllerEvents(selectedDeviceId, appliedFilters, timezone, controllerKey, controllers !== undefined);
   const allowedCameras = useAllowedCameras();
 
   const cameraOptions = useMemo(() => {
@@ -225,7 +204,21 @@ export default function AccessControllerPage() {
   }, [eventsError, t]);
 
   const deviceList = controllers ?? [];
-  const eventList = events ?? [];
+  const selectedControllers = deviceList.filter((device) => selectedDeviceId === "all" || device.id === selectedDeviceId);
+  const connectionState = socketState !== "live" ? socketState :
+    selectedControllers.length > 0 && selectedControllers.every((device) => (streamStates[device.id] ?? device.stream_state) === "live") ? "live" : "reconnecting";
+
+  const handleEventSearch = () => {
+    try {
+      const start = accessFilterTimestamp(draftFilters.start, timezone);
+      const end = accessFilterTimestamp(draftFilters.end, timezone);
+      if (start !== undefined && end !== undefined && start > end) throw new RangeError("Invalid time range");
+      setSelectedEventId(null);
+      setAppliedFilters({ ...draftFilters });
+    } catch {
+      toast.error(t("events.invalidRange", { ns: "views/organization" }));
+    }
+  };
 
   const handleSave = async (values: DeviceFormValues, mode: "create" | "edit") => {
     const payload = {
@@ -344,16 +337,9 @@ export default function AccessControllerPage() {
     error: "bg-amber-500/10 text-amber-500",
     unknown: "bg-slate-500/10 text-slate-300",
   };
-  const verificationClasses: Record<string, string> = {
-    valid: "text-emerald-500",
-    warning: "text-amber-500",
-    unknown: "text-slate-400",
-    pending: "text-blue-400",
-    unverified: "text-muted-foreground",
-  };
 
   return (
-    <div className="size-full overflow-hidden p-4">
+    <div className="scrollbar-container size-full overflow-y-auto p-4">
       <div className="mx-auto max-w-7xl">
         <div className="mb-4">
           <h1 className="text-2xl font-semibold text-foreground">
@@ -491,95 +477,13 @@ export default function AccessControllerPage() {
           </TabsContent>
 
           <TabsContent value="events" className="space-y-4">
-            <div className="flex items-center gap-3">
-              <label className="text-sm font-medium text-foreground">
-                {t("events.filter", { ns: "views/organization" })}
-              </label>
-              <Select value={selectedDeviceId} onValueChange={setSelectedDeviceId}>
-                <SelectTrigger className="w-[220px]">
-                  <SelectValue placeholder={t("events.all", { ns: "views/organization" })} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">{t("events.all", { ns: "views/organization" })}</SelectItem>
-                  {deviceList.map((device) => (
-                    <SelectItem key={device.id} value={device.id}>
-                      {device.name || device.id}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="overflow-x-auto rounded-lg border bg-card">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>{t("events.table.time", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.device", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.code", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.action", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.card", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.owners", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.people", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.verification", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.footage", { ns: "views/organization" })}</TableHead>
-                    <TableHead>{t("events.table.details", { ns: "views/organization" })}</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {eventList.length === 0 ? (
-                    <TableRow>
-                      <TableCell colSpan={10} className="py-8 text-center text-sm text-muted-foreground">
-                        {t("events.empty", { ns: "views/organization" })}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    eventList.map((event, index) => {
-                      const details =
-                        typeof event.data === "string"
-                          ? event.data
-                          : event.data && Object.keys(event.data).length > 0
-                            ? JSON.stringify(event.data)
-                            : JSON.stringify(event);
-
-                      return (
-                        <TableRow key={event.id ?? `${event.device_id ?? "device"}-${index}`}>
-                          <TableCell>
-                            {event.time ?? event.Time ??
-                              (typeof event.timestamp === "number"
-                                ? new Date(event.timestamp * 1000).toLocaleString()
-                                : event.timestamp ?? "-")}
-                          </TableCell>
-                          <TableCell>{event.device_name ?? event.device_id ?? "-"}</TableCell>
-                          <TableCell>{String(event.code ?? event.Code ?? "-")}</TableCell>
-                          <TableCell>{String(event.action ?? "-")}</TableCell>
-                          <TableCell>{event.card_number || "-"}</TableCell>
-                          <TableCell>{event.owner_names?.join(", ") || "-"}</TableCell>
-                          <TableCell>{event.people?.map((person) => person.name).join(", ") || "-"}</TableCell>
-                          <TableCell>
-                            <span className={verificationClasses[event.verification_status ?? "unverified"]}>
-                              {t(`verification.${event.verification_status ?? "unverified"}`, { ns: "views/organization" })}
-                            </span>
-                          </TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              disabled={!event.camera || event.clip_start === undefined || event.clip_end === undefined}
-                              onClick={() => setFootageEvent(event)}
-                            >
-                              <LuPlay className="mr-1 size-4" />
-                              {t("button.viewFootage", { ns: "views/organization" })}
-                            </Button>
-                          </TableCell>
-                          <TableCell className="max-w-md truncate">{details}</TableCell>
-                        </TableRow>
-                      );
-                    })
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+            <AccessEvents events={events} controllers={deviceList} deviceId={selectedDeviceId}
+              onDeviceChange={(id) => { setSelectedDeviceId(id); setSelectedEventId(null); }}
+              filters={draftFilters} onFiltersChange={setDraftFilters} onSearch={handleEventSearch}
+              onClear={() => { setDraftFilters({ ...emptyAccessEventFilters }); setAppliedFilters({ ...emptyAccessEventFilters }); setSelectedEventId(null); }}
+              loading={eventsLoading} historyWarning={historyWarning} connectionState={connectionState}
+              timezone={timezone} selectedEventId={selectedEventId} onSelectEvent={setSelectedEventId}
+              onViewFootage={setFootageEvent} />
           </TabsContent>
         </Tabs>
       </div>

@@ -6,6 +6,7 @@ import {
   invalidateCameraActivityCache,
   processWsMessage,
   resetWsStore,
+  setWsConnectionState,
 } from "./ws";
 
 export function WsProvider({ children }: { children: ReactNode }) {
@@ -37,6 +38,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        setWsConnectionState("live");
         reconnectAttempt.current = 0;
         // events may have been missed while disconnected — the snapshot
         // requested below must fully apply even if byte-identical
@@ -56,6 +58,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
 
       ws.onclose = () => {
         if (unmounted.current) return;
+        setWsConnectionState("reconnecting");
         const delay = Math.min(1000 * 2 ** reconnectAttempt.current, 30000);
         reconnectAttempt.current++;
         reconnectTimer.current = setTimeout(connect, delay);
@@ -66,6 +69,7 @@ export function WsProvider({ children }: { children: ReactNode }) {
       };
     }
 
+    setWsConnectionState("connecting");
     connect();
 
     return () => {

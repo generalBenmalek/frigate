@@ -149,6 +149,10 @@ _WS_GLOBAL_OUTBOUND_TOPICS = frozenset(
     }
 )
 
+_WS_ADMIN_OUTBOUND_TOPICS = frozenset(
+    {"access_controller_events", "access_controller_status"}
+)
+
 # Topics that restricted roles must never receive. Birdseye composites span
 # all cameras, so the existing JSMPEG policy already restricts birdseye access
 # to unrestricted roles; the layout broadcast follows the same rule.
@@ -278,6 +282,7 @@ def _classify_outbound(
 
     kind values:
       - "global"             : send to every authenticated client
+      - "admin"              : send only to administrator roles
       - "drop"               : send to nobody (fail-closed for unknowns)
       - "unrestricted_only"  : send only to admin/full-access roles
       - "camera"             : extra is the owning camera name
@@ -288,6 +293,8 @@ def _classify_outbound(
     """
     if topic in _WS_GLOBAL_OUTBOUND_TOPICS:
         return ("global", None)
+    if topic in _WS_ADMIN_OUTBOUND_TOPICS:
+        return ("admin", None)
     if topic in _WS_UNRESTRICTED_ONLY_TOPICS:
         return ("unrestricted_only", None)
     if topic in _WS_RESHAPE_BY_CAMERA_KEY_TOPICS:
@@ -383,6 +390,11 @@ def _materialize_for_ws(
         # Globals still require an authenticated connection. Missing role
         # falls back to viewer semantics (matching the inbound rule).
         return full_message
+
+    if kind == "admin":
+        header = _ws_role_header(ws)
+        roles = header.split(config.proxy.separator) if header else []
+        return full_message if "admin" in {role.strip() for role in roles} else None
 
     # Beyond globals, an authenticated role header is required (fail-closed).
     if not has_role:

@@ -1,6 +1,17 @@
+from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+
+class AccessEventHistoryBody(BaseModel):
+    """Controller and time bounds for an on-demand history import."""
+
+    device_id: str | None = None
+    start: datetime | None = None
+    end: datetime | None = None
+    timezone: str | None = None
+    count: int = Field(default=500, ge=1, le=1024)
 
 
 class AccessControllerBody(BaseModel):

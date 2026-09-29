@@ -100,6 +100,17 @@ function applyTopicUpdate(topic: string, newVal: unknown) {
   }
 }
 
+export function setWsConnectionState(state: "connecting" | "live" | "reconnecting") {
+  applyTopicUpdate("ws_connection_state", state);
+}
+
+export function useWsConnectionState(): "connecting" | "live" | "reconnecting" {
+  return useSyncExternalStore(
+    useCallback((listener: Listener) => subscribeWsTopic("ws_connection_state", listener), []),
+    useCallback(() => (wsState.ws_connection_state ?? "connecting") as "connecting" | "live" | "reconnecting", []),
+  );
+}
+
 // Subscriptions
 
 export function subscribeWsTopic(

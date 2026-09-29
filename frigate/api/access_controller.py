@@ -3,21 +3,26 @@
 import asyncio
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, tzinfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Query
 from fastapi.responses import JSONResponse, Response
 
 from frigate.access_controller_service import (
     build_controller,
+    controller_stream_state,
     poll_all_controllers,
     probe_device,
     probe_device_with_info,
+    serialize_access_event,
+    synchronize_controller_history,
 )
 from frigate.api.auth import require_role
 from frigate.api.defs.request.access_controller_body import (
     AccessControllerBody,
     AccessControllerUpdateBody,
+    AccessEventHistoryBody,
 )
 from frigate.api.defs.tags import Tags
 from frigate.dahua_adapter import (
@@ -65,6 +70,7 @@ def _default_device_info(device: AccessControl) -> dict:
         "seconds_before": device.seconds_before,
         "seconds_after": device.seconds_after,
         "last_checked_at": device.last_checked_at,
+        "stream_state": controller_stream_state(device.id),
     }
 
 
@@ -249,24 +255,68 @@ async def refresh_access_controller(device_id: str):
     return JSONResponse(content=_serialize_access_controller(device))
 
 
-@router.get("/access-controllers/events")
+@router.post(
+    "/access-controllers/events/sync",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+async def sync_access_controller_events(body: AccessEventHistoryBody):
+    """Import selected controller history without discarding locally saved events."""
+    if body.timezone:
+        zone: tzinfo | None
+        try:
+            zone = ZoneInfo(body.timezone)
+        except (ZoneInfoNotFoundError, ValueError):
+            try:
+                if not body.timezone.startswith(("UTC+", "UTC-")):
+                    raise ValueError("Invalid timezone")
+                zone = datetime.fromisoformat(
+                    f"2000-01-01T00:00:00{body.timezone.removeprefix('UTC')}"
+                ).tzinfo
+            except ValueError:
+                return JSONResponse(content={"message": "Invalid timezone"}, status_code=400)
+        if body.start is not None:
+            body.start = body.start.astimezone(zone) if body.start.tzinfo else body.start.replace(tzinfo=zone)
+        if body.end is not None:
+            body.end = body.end.astimezone(zone) if body.end.tzinfo else body.end.replace(tzinfo=zone)
+    if body.start is not None and body.end is not None:
+        if body.start.timestamp() > body.end.timestamp():
+            return JSONResponse(content={"message": "Invalid time range"}, status_code=400)
+    if body.device_id:
+        device = await asyncio.to_thread(AccessControl.get_or_none, AccessControl.id == body.device_id)
+        if device is None:
+            return JSONResponse(content={"message": "Controller not found"}, status_code=404)
+    results = await synchronize_controller_history(body.device_id, body.start, body.end, body.count)
+    return JSONResponse(content={"results": results})
+
+
+@router.get(
+    "/access-controllers/events",
+    dependencies=[Depends(require_role(["admin"]))],
+)
 def get_access_controller_events(
     device_id: str | None = Query(default=None),
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    card_no: str | None = Query(default=None),
+    status: str | None = Query(default=None, pattern="^(OK|Failed)$"),
+    count: int = Query(default=500, ge=1, le=1024),
 ):
     """Return stored controller records with their verification results."""
     _ensure_access_control_table()
     try:
         start_ts = (
-            datetime.fromisoformat(start).timestamp() if start else time.time() - 86400
+            datetime.fromisoformat(start).timestamp() if start else 0
         )
-        end_ts = datetime.fromisoformat(end).timestamp() if end else time.time()
+        end_ts = datetime.fromisoformat(end).timestamp() if end else None
     except ValueError:
         return JSONResponse(content={"message": "Invalid time range"}, status_code=400)
-    query = AccessEvent.select().where(
-        (AccessEvent.occurred_at >= start_ts) & (AccessEvent.occurred_at <= end_ts)
-    )
+    if end_ts is not None and end_ts < start_ts:
+        return JSONResponse(content={"message": "Invalid time range"}, status_code=400)
+    query = AccessEvent.select().where(AccessEvent.occurred_at >= start_ts)
+    if end_ts is not None:
+        query = query.where(AccessEvent.occurred_at <= end_ts)
     if device_id:
         query = query.where(AccessEvent.device_id == device_id)
     names = {
@@ -274,40 +324,40 @@ def get_access_controller_events(
         for device in AccessControl.select(AccessControl.id, AccessControl.name)
     }
     events = []
-    for event in query.order_by(AccessEvent.occurred_at.desc()).limit(250):
-        raw_record = {
-            key: value
-            for key, value in event.raw_record.items()
-            if key not in {"_owner_names", "_owner_names_complete"}
-        }
-        events.append(
-            {
-                **raw_record,
-                "id": event.id,
-                "device_id": event.device_id,
-                "device_name": names.get(event.device_id, event.device_id),
-                "timestamp": event.occurred_at,
-                "card_number": event.card_number,
-                "owner_names": event.raw_record.get("_owner_names")
-                or DahuaAccessController.record_names(event.raw_record),
-                "verification_status": event.verification_status,
-                "people": event.people,
-                "camera": event.camera,
-                "clip_start": event.occurred_at - event.seconds_before,
-                "clip_end": event.occurred_at + event.seconds_after,
-            }
-        )
+    for event in query.order_by(AccessEvent.occurred_at.desc(), AccessEvent.id).iterator():
+        serialized = serialize_access_event(event, names.get(event.device_id))
+        if serialized["event_code"] in {"DoorStatus", "DoorCard", "KeepLightOn", "DoorOpen", "DoorClose"}:
+            continue
+        if any(value and value.strip().casefold() not in str(serialized.get(key) if serialized.get(key) is not None else "").casefold()
+               for value, key in ((name, "user_name"), (user_id, "user_id"), (card_no, "card_number"))):
+            continue
+        if status and serialized["status"] != status:
+            continue
+        events.append(serialized)
+        if len(events) >= count:
+            break
     return JSONResponse(content=events)
 
 
-@router.get("/access-controllers/{device_id}/events")
+@router.get(
+    "/access-controllers/{device_id}/events",
+    dependencies=[Depends(require_role(["admin"]))],
+)
 def get_access_controller_device_events(
     device_id: str,
     start: str | None = Query(default=None),
     end: str | None = Query(default=None),
+    name: str | None = Query(default=None),
+    user_id: str | None = Query(default=None),
+    card_no: str | None = Query(default=None),
+    status: str | None = Query(default=None, pattern="^(OK|Failed)$"),
+    count: int = Query(default=500, ge=1, le=1024),
 ):
     """Return stored access events for one controller."""
-    return get_access_controller_events(device_id=device_id, start=start, end=end)
+    return get_access_controller_events(
+        device_id=device_id, start=start, end=end, name=name, user_id=user_id,
+        card_no=card_no, status=status, count=count,
+    )
 
 
 @router.get("/access-controllers/{device_id}/live")

@@ -1,12 +1,18 @@
 import tempfile
 import time
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import requests
 from fastapi.testclient import TestClient
 
-from frigate.access_controller_service import poll_controller, verify_pending_events
+from frigate.access_controller_service import (
+    _access_granted_card_scan,
+    _store_live_event,
+    _store_record,
+    poll_controller,
+    verify_pending_events,
+)
 from frigate.models import (
     AccessControl,
     AccessEvent,
@@ -157,14 +163,14 @@ class TestHttpAccessController(BaseTestHttp):
                 "CardNo": "123",
                 "CardName": "Alice",
                 "Status": "1",
-                "Method": "1",
+                "Method": "2",
             },
             {
                 "CreateTime": str(scan_time),
                 "CardNo": "456",
                 "CardName": "Bob",
                 "Status": "0",
-                "Method": "1",
+                "Method": "2",
             },
         ]
         with (
@@ -192,6 +198,70 @@ class TestHttpAccessController(BaseTestHttp):
             AccessEvent.get(AccessEvent.card_number == "456").verification_status
             == "unverified"
         )
+
+    def test_live_and_history_merge_without_resetting_verification(self):
+        device = AccessControl.create(
+            id="ac_1", name="Door 1", ip_address="127.0.0.1", type="Dahua",
+            model="ASI", serial_number="", username="", password="",
+            event_tracking_started_at=1790665388,
+        )
+        data = {"CreateTime": 1790665389, "Door": 0, "ReaderID": "1",
+                "CardNo": "000ABC", "CardName": "Alice", "UserID": "001",
+                "Status": 1, "Method": 11, "ErrorCode": 0, "Type": "Entry"}
+        _store_live_event(device.id, {"code": "AccessControl", "data": data})
+        event = AccessEvent.get()
+        original_id = event.id
+        event.verification_status = "valid"
+        event.save()
+        history = {key: str(value) for key, value in data.items()}
+        _store_record(device, {**history, "RecNo": "42"}, ["Alice"], True)
+        self.assertEqual(AccessEvent.select().count(), 1)
+        event = AccessEvent.get()
+        self.assertEqual(event.id, original_id)
+        self.assertEqual(event.verification_status, "valid")
+        self.assertEqual(event.raw_record["record_number"], "42")
+        _store_record(device, {**history, "RecNo": "42", "CardName": ""}, [], False)
+        event = AccessEvent.get()
+        self.assertEqual(event.raw_record["user_name"], "Alice")
+        self.assertEqual(event.verification_status, "valid")
+        _store_record(device, {**history, "RecNo": "43"}, ["Alice"], True)
+        self.assertEqual(AccessEvent.select().count(), 2)
+
+    def test_non_access_events_do_not_create_attendance_rows(self):
+        device = AccessControl.create(
+            id="ac_1", name="Door 1", ip_address="127.0.0.1", type="Dahua",
+            model="ASI", serial_number="", username="", password="",
+        )
+        _store_live_event(device.id, {"code": "DoorStatus", "data": {"Status": "Open", "UTC": 1790665389}})
+        self.assertEqual(AccessEvent.select().count(), 0)
+
+    def test_card_methods_include_multicard_and_exclude_fingerprint(self):
+        row = {"CardNo": "000ABC", "Status": 1, "ErrorCode": 0}
+        for method in (2, 10, 11):
+            self.assertTrue(_access_granted_card_scan({**row, "Method": method}))
+        self.assertFalse(_access_granted_card_scan({**row, "Method": 1}))
+        self.assertFalse(_access_granted_card_scan({**row, "Method": 11, "ErrorCode": 16}))
+
+    def test_history_filters_before_limit_and_includes_older_records(self):
+        for index, name in enumerate(("Alice", "Bob", "Charlie")):
+            AccessEvent.create(
+                id=f"event-{index}", device_id="ac_1", occurred_at=1000 + index,
+                card_number=f"000{index}", raw_record={"CardName": name, "UserID": "0", "Status": "1"},
+            )
+        with AuthTestClient(self.app) as client:
+            response = client.get("/access-controllers/events?name=AL&user_id=0&status=OK&count=1")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([event["user_name"] for event in response.json()], ["Alice"])
+
+    def test_history_sync_preserves_ui_timezone_for_cgi_search(self):
+        with AuthTestClient(self.app) as client:
+            with patch("frigate.api.access_controller.synchronize_controller_history", new=AsyncMock(return_value=[])) as sync:
+                response = client.post("/access-controllers/events/sync", json={
+                    "start": "2026-09-29T08:00:00Z", "timezone": "Africa/Algiers",
+                })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(sync.call_args.args[1].hour, 9)
+        self.assertEqual(sync.call_args.args[1].timestamp(), 1790668800)
 
     def test_card_verification_uses_all_people_in_window(self):
         scan_time = time.time() - 30

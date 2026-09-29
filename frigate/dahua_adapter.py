@@ -1,14 +1,16 @@
 """Provider based Dahua access controller integrations."""
 
 import asyncio
+import codecs
 import contextvars
 import importlib.metadata
 import json
 import logging
+import math
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
@@ -172,6 +174,93 @@ class DahuaProvider(Protocol):
     async def get_snapshot(self) -> bytes: ...
 
 
+class CgiEventParser:
+    """Buffer event-manager frames until their entire JSON object arrives."""
+
+    _header = re.compile(
+        r"Code=([^;\r\n]+);\s*action=([^;\r\n]+);\s*"
+        r"index=([^;\r\n]+);\s*data=\s*"
+    )
+
+    def __init__(self) -> None:
+        self.buffer = ""
+
+    def feed(self, chunk: str) -> list[dict[str, Any]]:
+        """Return complete frames, retaining only an unfinished frame or header."""
+        self.buffer += chunk
+        events: list[dict[str, Any]] = []
+        while True:
+            match = self._header.search(self.buffer)
+            if match is None:
+                error = CgiProvider._response_error(self.buffer.strip())
+                if error:
+                    raise DahuaOperationError(
+                        "cgi", "listen_events", "Dahua rejected the live-event subscription",
+                        dahua_code=error,
+                    )
+                self.buffer = self.buffer[-100:]
+                return events
+            self.buffer = self.buffer[match.start():]
+            match = self._header.match(self.buffer)
+            assert match is not None
+            json_start = match.end()
+            if not self.buffer[json_start:].startswith("{"):
+                next_header = self.buffer.find("Code=", json_start)
+                if next_header >= 0:
+                    self.buffer = self.buffer[next_header:]
+                    continue
+                if len(self.buffer) > 1024 * 1024:
+                    raise DahuaOperationError("cgi", "listen_events", "Live event exceeds the buffer limit")
+                return events
+            depth = 0
+            in_string = False
+            escaped = False
+            end = None
+            restart = False
+            for index in range(json_start, len(self.buffer)):
+                char = self.buffer[index]
+                if not in_string and self.buffer.startswith("Code=", index):
+                    self.buffer = self.buffer[index:]
+                    restart = True
+                    break
+                if in_string:
+                    if escaped:
+                        escaped = False
+                    elif char == "\\":
+                        escaped = True
+                    elif char == '"':
+                        in_string = False
+                elif char == '"':
+                    in_string = True
+                elif char == "{":
+                    depth += 1
+                elif char == "}":
+                    depth -= 1
+                    if depth == 0:
+                        end = index + 1
+                        break
+            if restart:
+                logger.warning("Ignoring incomplete Dahua live event before a new frame")
+                continue
+            if end is None:
+                if len(self.buffer) > 1024 * 1024:
+                    raise DahuaOperationError("cgi", "listen_events", "Live event exceeds the buffer limit")
+                return events
+            block = self.buffer[json_start:end]
+            self.buffer = self.buffer[end:]
+            try:
+                data = json.loads(block)
+            except json.JSONDecodeError:
+                logger.warning("Ignoring malformed Dahua live event")
+                continue
+            events.append({
+                "code": match.group(1), "action": match.group(2),
+                "index": match.group(3), "data": data,
+                "raw": {"Code": match.group(1), "action": match.group(2),
+                        "index": match.group(3), "data": data},
+            })
+
+
 class CgiProvider:
     """Dahua HTTP CGI provider. Device support is reported per operation."""
 
@@ -185,6 +274,7 @@ class CgiProvider:
         self.connection = connection
         self.base_url = f"{connection.scheme}://{connection.ip}:{connection.port}"
         self.diagnostic = diagnostic
+        self.history_incomplete = False
 
     def _report(self, detail: dict[str, Any]) -> None:
         if self.diagnostic is not None:
@@ -322,9 +412,13 @@ class CgiProvider:
         fields = cls._parse_fields(text)
         records: dict[int, dict[str, Any]] = {}
         for key, value in fields.items():
-            match = re.match(r"records\[(\d+)\]\.(.+)", key)
+            match = re.match(r"records\[(\d+)\]\.(.+)", key, re.IGNORECASE)
             if match:
                 records.setdefault(int(match.group(1)), {})[match.group(2)] = value
+                continue
+            match = re.fullmatch(r"([^\[\]]+)\[(\d+)\]", key)
+            if match:
+                records.setdefault(int(match.group(2)), {})[match.group(1)] = value
         return [records[index] for index in sorted(records)]
 
     async def _text(
@@ -353,6 +447,24 @@ class CgiProvider:
                 endpoint="/cgi-bin/magicBox.cgi?action=getSystemInfo",
                 response_body=text,
             )
+        # ASI firmware reports identity and software in separate CGI actions.
+        supplemental_actions = [
+            ("getMachineName", "deviceName", "name", ("deviceName", "name")),
+            ("getSerialNo", "serialNumber", "sn", ("serialNumber", "serial")),
+            ("getSoftwareVersion", "firmwareVersion", "version", ("firmwareVersion", "softwareVersion", "version")),
+            ("getHardwareVersion", "hardwareVersion", "version", ("hardwareVersion",)),
+        ]
+        missing = [item for item in supplemental_actions if not any(raw.get(key) for key in item[3])]
+        supplements = await asyncio.gather(
+            *(self._text("get_system_info", "/cgi-bin/magicBox.cgi", {"action": item[0]}) for item in missing),
+            return_exceptions=True,
+        )
+        for result, (_, target, key, _) in zip(supplements, missing):
+            if isinstance(result, str):
+                fields = self._parse_fields(result)
+                value = fields.get(key)
+                if value and not raw.get(target):
+                    raw[target] = value
         aliases = {
             "manufacturer": ("manufacturer", "vendor"),
             "model": ("deviceModel", "model", "deviceType", "type"),
@@ -378,37 +490,47 @@ class CgiProvider:
         return raw
 
     async def get_access_records(
-        self, start_time: datetime, end_time: datetime
+        self, start_time: datetime | None, end_time: datetime | None,
+        *, count: int = 100, conditions: dict[str, Any] | None = None,
     ) -> list[dict[str, Any]]:
-        if end_time < start_time:
+        if start_time is not None and end_time is not None and end_time < start_time:
             raise ValueError("end_time must not be earlier than start_time")
         path = "/cgi-bin/recordFinder.cgi"
         base_params = {
             "action": "find",
             "name": "AccessControlCardRec",
-            "StartTime": int(start_time.timestamp()),
-            "EndTime": int(end_time.timestamp()),
-            "count": 100,
+            "count": count,
         }
+        if start_time is not None:
+            base_params["StartTime"] = start_time.strftime("%Y-%m-%d %H:%M:%S")
+        if end_time is not None:
+            base_params["EndTime"] = end_time.strftime("%Y-%m-%d %H:%M:%S")
+        for key, value in (conditions or {}).items():
+            if key in {"UserID", "CardNo", "Door", "ReaderID", "Type"} and value is not None:
+                base_params[f"condition.{key}"] = value
         records: list[dict[str, Any]] = []
+        self.history_incomplete = False
         start_index = 0
         seen_pages: set[str] = set()
         for _ in range(1000):
-            params = {**base_params, "StartIndex": start_index}
-            text = await self._text("get_access_records", path, params)
+            params = {**base_params, **({"StartIndex": start_index} if start_index else {})}
+            try:
+                text = await self._text("get_access_records", path, params)
+            except DahuaOperationError:
+                if not records:
+                    raise
+                self.history_incomplete = True
+                logger.warning("Unable to retrieve another Dahua history page")
+                return records
             fields = self._parse_fields(text)
             page = self._parse_records(text)
             if not page:
                 return records
             signature = json.dumps(page, sort_keys=True)
             if signature in seen_pages:
-                raise DahuaOperationError(
-                    self.name,
-                    "get_access_records",
-                    "Controller repeated a records page; results may be incomplete",
-                    endpoint=path,
-                    response_body=text,
-                )
+                self.history_incomplete = True
+                logger.warning("Dahua repeated a history page; pagination is unavailable")
+                return records
             seen_pages.add(signature)
             records.extend(_safe_raw(record) for record in page)
             found = int(fields.get("found", len(page)) or 0)
@@ -421,12 +543,9 @@ class CgiProvider:
                 return records
             if found and found < len(page):
                 return records
-        raise DahuaOperationError(
-            self.name,
-            "get_access_records",
-            "History pagination exceeded the safety limit",
-            endpoint=path,
-        )
+        self.history_incomplete = True
+        logger.warning("Dahua history pagination reached the safety limit")
+        return records
 
     async def get_card_owners(self, card_number: str) -> list[str]:
         text = await self._text(
@@ -472,6 +591,15 @@ class CgiProvider:
             stream=True,
         )
         try:
+            if event_api == "eventManager":
+                decoder = codecs.getincrementaldecoder("utf-8")("replace")
+                parser = CgiEventParser()
+                async for chunk in response.content.iter_any():
+                    for event in parser.feed(decoder.decode(chunk)):
+                        callback(_safe_raw(event))
+                for event in parser.feed(decoder.decode(b"", final=True)):
+                    callback(_safe_raw(event))
+                return
             pending: dict[str, Any] = {}
             while raw_line := await response.content.readline():
                 line = raw_line.decode("utf-8", errors="replace").strip()
@@ -938,12 +1066,12 @@ class DahuaAccessController:
         else:
             raise ValueError(f"Unknown Dahua provider: {provider}")
 
-    async def _provider_call(self, operation: str, *args):
+    async def _provider_call(self, operation: str, *args, **kwargs):
         """Invoke one provider operation and attach consistent diagnostics."""
         redaction_token = _redaction_secret.set(self.connection.password)
         try:
             method = getattr(self.provider, operation)
-            return _safe_raw(await method(*args))
+            return _safe_raw(await method(*args, **kwargs))
         except DahuaOperationError:
             raise
         except Exception as err:  # noqa: BLE001 - capture provider operation failures
@@ -989,6 +1117,19 @@ class DahuaAccessController:
         self, start_time: datetime, end_time: datetime
     ) -> list[dict[str, Any]]:
         return await self._provider_call("get_access_records", start_time, end_time)
+
+    async def get_access_history_async(
+        self, start_time: datetime | None = None, end_time: datetime | None = None,
+        *, count: int = 500,
+    ) -> list[dict[str, Any]]:
+        """Query CGI history without requiring an artificial lookback window."""
+        if self.provider_name == "cgi":
+            return await self._provider_call(
+                "get_access_records", start_time, end_time, count=count,
+            )
+        return await self.get_access_records_async(
+            start_time or datetime.fromtimestamp(0, UTC), end_time or datetime.now(UTC)
+        )
 
     def get_access_records(
         self, start_time: datetime, end_time: datetime
@@ -1167,49 +1308,70 @@ class DahuaAccessController:
             data = {}
         else:
             data = _safe_raw(data)
-        source = {**event, **data}
+        source = {
+            **(raw if isinstance(raw, dict) else {}), **event, **data,
+        }
 
         def first_present(*keys: str):
             return next(
-                (source[key] for key in keys if source.get(key) is not None), None
+                (source[key] for key in keys if source.get(key) not in (None, "")), None
             )
 
-        timestamp = next(
-            (
-                source.get(key)
-                for key in ("timestamp", "CreateTime", "Time", "time", "PTS")
-                if source.get(key) is not None
-            ),
-            None,
-        )
-        if isinstance(timestamp, str):
+        timestamp = None
+        for key in ("CreateTime", "RealUTC", "UTC", "timestamp", "Time", "time", "datetime", "PTS"):
+            value = source.get(key)
+            if value in (None, ""):
+                continue
             try:
-                timestamp = float(timestamp)
-            except ValueError:
+                candidate = float(value)
+            except (TypeError, ValueError):
+                if not isinstance(value, str):
+                    continue
                 try:
-                    timestamp = datetime.fromisoformat(timestamp).timestamp()
+                    candidate = datetime.fromisoformat(value).timestamp()
                 except ValueError:
-                    timestamp = None
-        try:
-            timestamp = float(timestamp) if timestamp is not None else None
-        except (ValueError, TypeError):
-            timestamp = None
+                    continue
+            if math.isfinite(candidate):
+                timestamp = candidate / 1000 if candidate > 10_000_000_000 else candidate
+                break
         card_number = first_present("CardNo", "card_number", "cardNo")
         card_name = first_present("CardName", "card_name", "CardholderName")
+        user_name = card_name or first_present("UserName", "user_name", "Name", "name")
+        if isinstance(user_name, list):
+            user_name = ", ".join(str(name) for name in user_name if name not in (None, ""))
+        elif user_name is not None:
+            user_name = str(user_name)
+        status = first_present("Status", "access_status", "status", "result")
+        error_code = first_present("ErrorCode", "error_code")
+        status_text = str(status).strip().casefold()
+        try:
+            failed = error_code is not None and int(error_code) != 0
+        except (TypeError, ValueError):
+            failed = False
+        result = (
+            "Failed" if failed or status_text in {"0", "false", "failed", "error", "deny"}
+            else "OK" if status_text in {"1", "true", "ok", "success", "grant", "succeeded"}
+            else str(status) if status is not None else "-"
+        )
         return {
             "device_id": device_id,
-            "event_code": event.get("code") or first_present("Code", "EventType"),
+            "event_code": first_present("code", "Code", "event_code", "EventType") or "AccessControl",
             "timestamp": timestamp,
-            "door_id": first_present("DoorID", "DoorNo", "Door", "door_id", "channel"),
+            "door_id": first_present("Door", "door_id", "DoorID", "DoorNo", "channel"),
             "reader_id": first_present("ReaderID", "Reader", "reader_id"),
             "card_number": str(card_number).strip()
             if card_number is not None
             else None,
-            "user_id": first_present("UserID", "user_id"),
-            "user_name": first_present("UserName", "user_name") or card_name,
+            "user_id": first_present("UserID", "UserId", "user_id"),
+            "user_name": user_name,
             "card_name": card_name,
-            "access_status": first_present("Status", "status", "result"),
-            "authentication_method": first_present("Method", "method"),
+            "access_status": status,
+            "status": result,
+            "authentication_method": first_present("Method", "authentication_method", "method"),
+            "verify_mode": first_present("VerifyMode", "VerificationMode", "verify_mode"),
+            "error_code": error_code,
+            "type": first_present("Type", "type"),
+            "record_number": first_present("RecNo", "record_number"),
             "action": event.get("action") or first_present("action"),
             "data": data,
             "raw": raw,

@@ -11,6 +11,7 @@ from frigate.camera.activity_manager import AudioActivityManager, CameraActivity
 from frigate.comms.base_communicator import Communicator
 from frigate.comms.runtime_state import RuntimeStatePersistence
 from frigate.comms.webpush import WebPushClient
+from frigate.comms.ws import WebSocketClient
 from frigate.config import BirdseyeModeEnum, FrigateConfig
 from frigate.config.camera.updater import (
     CameraConfigUpdateEnum,
@@ -397,6 +398,12 @@ class Dispatcher:
         """Handle publishing to communicators."""
         for comm in self.comms:
             comm.publish(topic, payload, retain)
+
+    def publish_websocket(self, topic: str, payload: str) -> None:
+        """Publish administrative UI data only to WebSocket recipients."""
+        for comm in self.comms:
+            if isinstance(comm, WebSocketClient):
+                comm.publish(topic, payload)
 
     def stop(self) -> None:
         self.camera_activity.stop()
