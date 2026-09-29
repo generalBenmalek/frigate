@@ -15,6 +15,7 @@ from starlette_context import middleware, plugins
 from starlette_context.plugins import Plugin
 
 from frigate.access_controller_service import run_controller_polling
+from frigate.access_controller_verification import CameraEvidence
 from frigate.api import (
     access_controller,
     auth,
@@ -134,7 +135,10 @@ def create_fastapi_app(
     async def startup():
         logger.info("FastAPI started")
         app.state.access_controller_task = asyncio.create_task(
-            run_controller_polling(dispatcher.publish_websocket if dispatcher else None)
+            run_controller_polling(
+                dispatcher.publish_websocket if dispatcher else None,
+                CameraEvidence(detected_frames_processor, frigate_config),
+            )
         )
         asyncio.create_task(
             debug_replay_auto_stop_watchdog(

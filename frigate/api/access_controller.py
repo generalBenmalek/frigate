@@ -7,7 +7,7 @@ from datetime import datetime, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Query
-from fastapi.responses import JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 
 from frigate.access_controller_service import (
     build_controller,
@@ -15,9 +15,11 @@ from frigate.access_controller_service import (
     poll_all_controllers,
     probe_device,
     probe_device_with_info,
+    reverify_access_event,
     serialize_access_event,
     synchronize_controller_history,
 )
+from frigate.access_controller_verification import SNAPSHOT_COUNT, SNAPSHOT_RETENTION, snapshot_path
 from frigate.api.auth import require_role
 from frigate.api.defs.request.access_controller_body import (
     AccessControllerBody,
@@ -287,6 +289,42 @@ async def sync_access_controller_events(body: AccessEventHistoryBody):
             return JSONResponse(content={"message": "Controller not found"}, status_code=404)
     results = await synchronize_controller_history(body.device_id, body.start, body.end, body.count)
     return JSONResponse(content={"results": results})
+
+
+@router.get(
+    "/access-controllers/events/{event_id}/snapshots/{index}",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+async def access_event_snapshot(event_id: str, index: int):
+    """Return a fresh scan-time screenshot from the bounded camera evidence cache."""
+    event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+    if event is None or not 0 <= index < SNAPSHOT_COUNT:
+        return JSONResponse(content={"message": "Snapshot not found"}, status_code=404)
+    path = snapshot_path(event_id, index)
+
+    def available() -> bool:
+        try:
+            return path.is_file() and path.stat().st_mtime >= time.time() - SNAPSHOT_RETENTION
+        except OSError:
+            return False
+
+    if not await asyncio.to_thread(available):
+        return JSONResponse(content={"message": "Snapshot not found"}, status_code=404)
+    return FileResponse(path, media_type="image/jpeg", headers={"Cache-Control": "private, no-store"})
+
+
+@router.post(
+    "/access-controllers/events/{event_id}/verify",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+async def verify_access_controller_event(event_id: str):
+    """Retry camera verification without comparing an old scan to today's live view."""
+    event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+    if event is None:
+        return JSONResponse(content={"message": "Event not found"}, status_code=404)
+    await reverify_access_event(event_id)
+    saved = await asyncio.to_thread(AccessEvent.get_by_id, event_id)
+    return JSONResponse(content=serialize_access_event(saved))
 
 
 @router.get(

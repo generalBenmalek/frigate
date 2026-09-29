@@ -8,17 +8,25 @@ import threading
 import time
 from collections.abc import Callable
 from datetime import UTC, datetime
-from pathlib import Path
 
 import requests
 
-from frigate.const import FACE_DIR
+from frigate.access_controller_verification import (
+    SNAPSHOT_COUNT,
+    SNAPSHOT_INTERVAL,
+    CameraEvidence,
+    classify_people,
+    cleanup_snapshots,
+    evidence_timestamp,
+    history_people,
+    known_names,
+    merge_people,
+    save_snapshot,
+)
 from frigate.dahua_adapter import DahuaAccessController
 from frigate.models import (
     AccessControl,
     AccessEvent,
-    Event,
-    Recordings,
 )
 
 logger = logging.getLogger(__name__)
@@ -28,6 +36,10 @@ _publisher: Callable[[str, str], None] | None = None
 _stream_states: dict[str, str] = {}
 _history_locks: dict[str, asyncio.Lock] = {}
 _record_locks: dict[str, threading.RLock] = {}
+_camera_evidence: CameraEvidence | None = None
+_capture_tasks: dict[str, asyncio.Task] = {}
+_history_verification_tasks: dict[str, asyncio.Task] = {}
+_recognition_slots: asyncio.Semaphore | None = None
 
 
 def build_controller(
@@ -67,6 +79,7 @@ def serialize_access_event(event: AccessEvent, device_name: str | None = None) -
         key: value for key, value in event.raw_record.items() if not key.startswith("_")
     })
     normalized = DahuaAccessController.normalize_event(raw, event.device_id)
+    start, end = _verification_window(event)
     return {
         **raw, **normalized,
         "id": event.id, "device_id": event.device_id,
@@ -75,8 +88,16 @@ def serialize_access_event(event: AccessEvent, device_name: str | None = None) -
         "owner_names": event.raw_record.get("_owner_names") or DahuaAccessController.record_names(raw),
         "verification_status": event.verification_status, "people": event.people,
         "camera": event.camera,
-        "clip_start": event.occurred_at - event.seconds_before,
-        "clip_end": event.occurred_at + event.seconds_after,
+        "clip_start": start, "clip_end": end,
+        "verification_reason": event.raw_record.get("_verification_reason"),
+        "verification_sources": event.raw_record.get("_verification_sources", []),
+        "evidence_time": evidence_timestamp(event),
+        "clock_adjusted": bool(event.raw_record.get("_clock_adjusted")),
+        "snapshots": [
+            {"url": f"access-controllers/events/{event.id}/snapshots/{sample['index']}",
+             "timestamp": sample["timestamp"]}
+            for sample in event.raw_record.get("_snapshots", [])
+        ],
     }
 
 
@@ -146,14 +167,20 @@ def probe_device(device: AccessControl) -> AccessControl:
     return probe_device_with_info(device)[0]
 
 
-def _timestamp(value: datetime | float | None) -> float | None:
-    if value is None:
-        return None
-    return value.timestamp() if isinstance(value, datetime) else float(value)
+def _verification_candidate(row: dict) -> bool:
+    """Verify successful access for every authentication method with an identity."""
+    normalized = DahuaAccessController.normalize_event(row, "")
+    return (
+        normalized["status"] == "OK"
+        and bool(normalized["card_number"] or normalized["user_id"] is not None
+                 or DahuaAccessController.record_names(row))
+    ) or _access_granted_card_scan(row)
 
 
-def _detected_names(person: dict) -> set[str]:
-    return {name.strip().casefold() for name in str(person["name"]).split(",")}
+def _verification_window(event: AccessEvent) -> tuple[float, float]:
+    timestamp = evidence_timestamp(event)
+    after = max(event.seconds_after, SNAPSHOT_INTERVAL * (SNAPSHOT_COUNT - 1)) if event.raw_record.get("_live_received_at") else event.seconds_after
+    return timestamp - event.seconds_before, timestamp + after
 
 
 def _access_granted_card_scan(row: dict) -> bool:
@@ -174,23 +201,21 @@ def _access_granted_card_scan(row: dict) -> bool:
 
 def _store_record(
     device: AccessControl, row: dict, owner_names: list[str], owners_complete: bool
-) -> None:
+) -> str | None:
     with _record_locks.setdefault(device.id, threading.RLock()):
-        _store_record_locked(device, row, owner_names, owners_complete)
+        return _store_record_locked(device, row, owner_names, owners_complete)
 
 
 def _store_record_locked(
     device: AccessControl, row: dict, owner_names: list[str], owners_complete: bool
-) -> None:
+) -> str | None:
     row = DahuaAccessController.sanitize_raw_event(row)
     normalized = DahuaAccessController.normalize_event(row, device.id)
     occurred_at = normalized["timestamp"]
     if occurred_at is None:
         return
     card_number = normalized["card_number"] or ""
-    is_new_scan = _access_granted_card_scan(row) and occurred_at >= (
-        device.event_tracking_started_at or 0
-    )
+    should_verify = _verification_candidate(row)
     identity = _event_identity(normalized)
     record_number = normalized["record_number"]
     candidates = AccessEvent.select().where(
@@ -224,21 +249,25 @@ def _store_record_locked(
             **existing.raw_record,
             **{key: value for key, value in record.items() if value not in (None, "")},
         }
-        if not owner_names:
+        if not owner_names or existing.raw_record.get("_owner_names_resolved"):
             merged["_owner_names"] = existing.raw_record.get("_owner_names", [])
             merged["_owner_names_complete"] = existing.raw_record.get("_owner_names_complete", False)
         if existing.raw_record != merged:
             existing.raw_record = merged
             existing.save(only=[AccessEvent.raw_record])
             _publish_event(existing, device.name)
-        return
+        if should_verify and existing.verification_status == "unverified":
+            existing.verification_status = "pending"
+            existing.save(only=[AccessEvent.verification_status])
+            _publish_event(existing, device.name)
+        return existing.id
     AccessEvent.insert(
         id=fingerprint,
         device_id=device.id,
         occurred_at=occurred_at,
         card_number=card_number or None,
         raw_record=record,
-        verification_status="pending" if is_new_scan else "unverified",
+        verification_status="pending" if should_verify else "unverified",
         people=[],
         camera=device.associated_camera,
         seconds_before=device.seconds_before,
@@ -246,6 +275,7 @@ def _store_record_locked(
     ).on_conflict_ignore().execute()
     saved = AccessEvent.get_by_id(fingerprint)
     _publish_event(saved, device.name)
+    return saved.id
 
 
 def _event_identity(normalized: dict) -> tuple[str, ...]:
@@ -255,7 +285,7 @@ def _event_identity(normalized: dict) -> tuple[str, ...]:
                              "status", "authentication_method", "type"))
 
 
-def _store_live_event(device_id: str, event: dict) -> None:
+def _store_live_event(device_id: str, event: dict) -> str | None:
     """Normalize a provider event and store it in the existing event table."""
     device = AccessControl.get_or_none(AccessControl.id == device_id)
     if device is None:
@@ -263,16 +293,21 @@ def _store_live_event(device_id: str, event: dict) -> None:
     normalized = DahuaAccessController.normalize_event(event, device_id)
     if normalized["event_code"] != "AccessControl":
         return
+    received_at = time.time()
     if normalized["timestamp"] is None:
-        normalized["timestamp"] = time.time()
+        normalized["timestamp"] = received_at
         normalized["timestamp_source"] = "received_at"
+    clock_adjusted = abs(normalized["timestamp"] - received_at) > 30
     record = {
         **(event.get("raw") if isinstance(event.get("raw"), dict) else {}),
         **(normalized.get("data") if isinstance(normalized.get("data"), dict) else {}),
         **normalized,
         "live": True,
+        "_live_received_at": received_at,
+        "_verification_time": received_at if clock_adjusted else normalized["timestamp"],
+        "_clock_adjusted": clock_adjusted,
     }
-    _store_record(
+    return _store_record(
         device,
         record,
         DahuaAccessController.record_names(record),
@@ -401,80 +436,266 @@ def _mark_poll_error(device_id: str) -> AccessControl | None:
 
 
 def verify_pending_events() -> None:
-    """Finalize scans once their camera window and recording grace have passed."""
+    """Reconcile history and sampled identities, allowing delayed labels to arrive."""
     now = time.time()
-    pending = AccessEvent.select().where(AccessEvent.verification_status == "pending")
+    pending = AccessEvent.select().where(
+        (AccessEvent.verification_status == "pending")
+        | ((AccessEvent.verification_status == "unverified")
+           & AccessEvent.raw_record["_verification_reason"].is_null())
+        | ((AccessEvent.verification_status == "unknown")
+           & ((AccessEvent.occurred_at >= now - 300)
+              | (AccessEvent.raw_record["_verification_time"].cast("real") >= now - 300)))
+    ).order_by(AccessEvent.occurred_at.desc()).limit(64)
     for access_event in pending:
-        start = access_event.occurred_at - access_event.seconds_before
-        end = access_event.occurred_at + access_event.seconds_after
-        if now < end + 5:
-            continue
+        _verify_event(access_event.id, now)
 
-        camera = access_event.camera
-        people: list[dict[str, str | float | None]] = []
-        if camera:
-            detections = Event.select(
-                Event.id, Event.sub_label, Event.start_time, Event.end_time
-            ).where(
-                (Event.camera == camera)
-                & (Event.label == "person")
-                & (Event.false_positive == False)
-                & (Event.start_time <= end)
-                & ((Event.end_time >= start) | Event.end_time.is_null())
-            )
-            for detection in detections:
-                name = detection.sub_label or "unknown"
-                people.append(
-                    {
-                        "event_id": detection.id,
-                        "name": name,
-                        "start_time": _timestamp(detection.start_time),
-                        "end_time": _timestamp(detection.end_time),
-                    }
-                )
 
-        access_event.people = people
-        owner_names = access_event.raw_record.get(
-            "_owner_names"
-        ) or DahuaAccessController.record_names(access_event.raw_record)
-        owners = {
-            name.casefold()
-            for name in owner_names
-            if isinstance(name, str) and name.strip()
-        }
-        registered_faces = (
-            {path.name.casefold() for path in Path(FACE_DIR).iterdir() if path.is_dir()}
-            if Path(FACE_DIR).is_dir()
-            else set()
-        )
-        has_recording = (
-            bool(camera)
-            and Recordings.select()
-            .where(
-                (Recordings.camera == camera)
-                & (Recordings.start_time <= end)
-                & (Recordings.end_time >= start)
-            )
-            .exists()
-        )
-
-        if (
-            not owners
-            or access_event.raw_record.get("_owner_names_complete") is False
-            or not owners.issubset(registered_faces)
-            or not has_recording
-            or not people
-        ):
-            access_event.verification_status = "unknown"
-        elif any(not _detected_names(person).issubset(owners) for person in people):
-            access_event.verification_status = "warning"
-        elif any(_detected_names(person).intersection(owners) for person in people):
-            access_event.verification_status = "valid"
+def _verify_event(event_id: str, now: float | None = None) -> None:
+    access_event = AccessEvent.get_or_none(AccessEvent.id == event_id)
+    if access_event is None:
+        return
+    with _record_locks.setdefault(access_event.device_id, threading.RLock()):
+        access_event = AccessEvent.get_by_id(event_id)
+        now = now if now is not None else time.time()
+        if not access_event.camera:
+            device = AccessControl.get_or_none(AccessControl.id == access_event.device_id)
+            if device is not None and device.associated_camera:
+                access_event.camera = device.associated_camera
+        start, end = _verification_window(access_event)
+        raw = dict(access_event.raw_record)
+        if not _verification_candidate(raw):
+            status, reason, people = "unverified", "access_not_granted", []
+        elif not access_event.camera:
+            status, reason, people = "unknown", "missing_camera", []
         else:
-            access_event.verification_status = "unknown"
-        access_event.save()
-        device = AccessControl.get_or_none(AccessControl.id == access_event.device_id)
-        _publish_event(access_event, device.name if device else None)
+            people = merge_people(
+                raw.get("_camera_people", []),
+                history_people(access_event.camera, start, min(end, now)),
+            )
+            owners = raw.get("_owner_names") or DahuaAccessController.record_names(raw)
+            status, reason = classify_people(owners, people)
+            if reason == "unrecognized_person" and _camera_evidence is not None:
+                if not _camera_evidence.recognition_enabled(access_event.camera):
+                    reason = "recognition_disabled"
+            # Continue collecting until the camera window ends, even when a
+            # match is found, so a later recognized second person is included.
+            if now < end + 30 and evidence_timestamp(access_event) <= now + 30:
+                raw["_verification_provisional"] = status
+                status = "pending"
+                reason = "collecting_evidence"
+            else:
+                raw.pop("_verification_provisional", None)
+        raw["_verification_reason"] = reason
+        raw["_verification_sources"] = sorted({person["source"] for person in people if person.get("source")})
+        if access_event.verification_status != status or access_event.people != people or access_event.raw_record != raw:
+            access_event.verification_status = status
+            access_event.people = people
+            access_event.raw_record = raw
+            access_event.save(only=[AccessEvent.camera, AccessEvent.verification_status, AccessEvent.people, AccessEvent.raw_record])
+            device = AccessControl.get_or_none(AccessControl.id == access_event.device_id)
+            _publish_event(access_event, device.name if device else None)
+
+
+def _save_camera_evidence(event_id: str, people: list[dict], sample: dict | None = None) -> None:
+    event = AccessEvent.get_or_none(AccessEvent.id == event_id)
+    if event is None:
+        return
+    with _record_locks.setdefault(event.device_id, threading.RLock()):
+        event = AccessEvent.get_by_id(event_id)
+        raw = dict(event.raw_record)
+        raw["_camera_people"] = merge_people(raw.get("_camera_people", []), people)
+        if sample is not None:
+            raw["_snapshots"] = [entry for entry in raw.get("_snapshots", []) if entry["index"] != sample["index"]] + [sample]
+        event.raw_record = raw
+        event.save(only=[AccessEvent.raw_record])
+        _verify_event(event_id)
+
+
+async def _resolve_scan_owners(event_id: str) -> None:
+    event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+    if event is None or not event.card_number:
+        return
+    device = await asyncio.to_thread(AccessControl.get_or_none, AccessControl.id == event.device_id)
+    if device is None:
+        return
+    try:
+        owners = await build_controller(device).get_card_owners_async(event.card_number)
+    except (requests.RequestException, ValueError):
+        logger.debug("Unable to resolve card owners for access event %s", event_id)
+        return
+    if not owners:
+        return
+
+    def save_owners() -> None:
+        with _record_locks.setdefault(device.id, threading.RLock()):
+            saved = AccessEvent.get_or_none(AccessEvent.id == event_id)
+            if saved is None:
+                return
+            saved.raw_record = {
+                **saved.raw_record, "_owner_names": owners,
+                "_owner_names_complete": True, "_owner_names_resolved": True,
+            }
+            saved.save(only=[AccessEvent.raw_record])
+            _verify_event(event_id)
+
+    await asyncio.to_thread(save_owners)
+
+
+async def _recognize_images(event_id: str, camera: str, images: list) -> None:
+    if _camera_evidence is None or _recognition_slots is None:
+        return
+    async with _recognition_slots:
+        people = await asyncio.to_thread(_camera_evidence.recognize, camera, images)
+    if people:
+        minimum = _camera_evidence.config.face_recognition.min_faces
+        await asyncio.to_thread(_save_recognized_evidence, event_id, people, minimum)
+
+
+def _save_recognized_evidence(event_id: str, people: list[dict], minimum: int) -> None:
+    """Honor the configured face count without counting a retried image twice."""
+    event = AccessEvent.get_or_none(AccessEvent.id == event_id)
+    if event is None:
+        return
+    with _record_locks.setdefault(event.device_id, threading.RLock()):
+        event = AccessEvent.get_by_id(event_id)
+        observations = dict(event.raw_record.get("_recognition_observations", {}))
+        accepted = []
+        for person in people:
+            key = person["name"].strip().casefold()
+            times = set(observations.get(key, []))
+            times.add(person["start_time"])
+            observations[key] = sorted(times)[-6:]
+            if len(times) >= minimum:
+                accepted.append(person)
+        event.raw_record = {**event.raw_record, "_recognition_observations": observations}
+        event.save(only=[AccessEvent.raw_record])
+        if accepted:
+            _save_camera_evidence(event_id, accepted)
+
+
+async def _capture_scan(event_id: str) -> None:
+    event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+    if event is None or not event.camera or _camera_evidence is None:
+        return
+    start, end = _verification_window(event)
+    began = asyncio.get_running_loop().time()
+    samples = []
+    for index in range(SNAPSHOT_COUNT):
+        delay = began + index * SNAPSHOT_INTERVAL - asyncio.get_running_loop().time()
+        if delay > 0:
+            await asyncio.sleep(delay)
+        sample = await asyncio.to_thread(_camera_evidence.sample, event.camera, start, end)
+        if not sample:
+            continue
+        metadata = None
+        if sample.get("image"):
+            await asyncio.to_thread(save_snapshot, event_id, index, sample["image"])
+            metadata = {"index": index, "timestamp": sample["time"]}
+        await asyncio.to_thread(_save_camera_evidence, event_id, sample.get("people", []), metadata)
+        samples.append(sample)
+    if not _verification_candidate(event.raw_record):
+        return
+
+    async def recognize_samples() -> None:
+        for sample in samples:
+            await _recognize_images(event_id, event.camera, sample.get("images", []))
+
+    async def observe_live_people() -> None:
+        while time.time() <= end:
+            people = await asyncio.to_thread(_camera_evidence.live_people, event.camera, start, end)
+            if people:
+                await asyncio.to_thread(_save_camera_evidence, event_id, people)
+            await asyncio.sleep(SNAPSHOT_INTERVAL)
+
+    # Save all three screenshots before slower recognition work begins, and
+    # retain identities applied later to ongoing objects without saved media.
+    await asyncio.gather(recognize_samples(), observe_live_people())
+
+
+async def _enrich_live_scan(event_id: str) -> None:
+    try:
+        event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+        if event is None:
+            return
+        if _verification_candidate(event.raw_record):
+            await asyncio.gather(_capture_scan(event_id), _resolve_scan_owners(event_id))
+        else:
+            await _capture_scan(event_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception:
+        logger.exception("Unable to collect camera evidence for access event %s", event_id)
+    finally:
+        _capture_tasks.pop(event_id, None)
+
+
+async def reverify_access_event(event_id: str) -> None:
+    """Retry historical evidence, including saved snapshots and recording frames."""
+    await _resolve_scan_owners(event_id)
+    await asyncio.to_thread(_verify_event, event_id)
+    event = await asyncio.to_thread(AccessEvent.get_or_none, AccessEvent.id == event_id)
+    if event is None or event.verification_status in {"valid", "warning", "unverified"}:
+        return
+    if not event.camera or _camera_evidence is None:
+        return
+    start, end = _verification_window(event)
+    if _camera_evidence.recognition_enabled(event.camera):
+        cached = await asyncio.to_thread(_camera_evidence.cached_images, event)
+        await _recognize_images(event_id, event.camera, cached)
+        event = await asyncio.to_thread(AccessEvent.get_by_id, event_id)
+        if any(known_names(person.get("name")) for person in event.people):
+            return
+        images = await asyncio.to_thread(_camera_evidence.historical_images, event.camera, start, end, event.people)
+        await _recognize_images(event_id, event.camera, images)
+        event = await asyncio.to_thread(AccessEvent.get_by_id, event_id)
+        if not any(known_names(person.get("name")) for person in event.people):
+            frames = await asyncio.to_thread(_camera_evidence.recording_images, event.camera, start, end)
+            await _recognize_images(event_id, event.camera, frames)
+        await asyncio.to_thread(_verify_event, event_id)
+
+
+async def _verify_camera_events() -> None:
+    await asyncio.to_thread(verify_pending_events)
+    if _camera_evidence is None or len(_history_verification_tasks) >= 2:
+        return
+    available_slots = 2 - len(_history_verification_tasks)
+
+    def retries() -> list[str]:
+        result = []
+        events = AccessEvent.select().where(
+            AccessEvent.verification_status.in_(["pending", "unknown"])
+            & AccessEvent.raw_record["_history_recognition_attempted"].is_null()
+            & AccessEvent.camera.is_null(False)
+        ).order_by(AccessEvent.occurred_at.desc()).limit(64)
+        for event in events:
+            if event.id in _capture_tasks or time.time() < _verification_window(event)[1] + 5:
+                continue
+            missing_owner = event.raw_record.get("_verification_reason") == "missing_owner"
+            if not missing_owner and any(known_names(person.get("name")) for person in event.people):
+                continue
+            if not missing_owner and not _camera_evidence.recognition_enabled(event.camera):
+                continue
+            with _record_locks.setdefault(event.device_id, threading.RLock()):
+                saved = AccessEvent.get_by_id(event.id)
+                saved.raw_record = {**saved.raw_record, "_history_recognition_attempted": True}
+                saved.save(only=[AccessEvent.raw_record])
+            result.append(event.id)
+            if len(result) == available_slots:
+                break
+        return result
+
+    async def retry(event_id: str) -> None:
+        try:
+            await reverify_access_event(event_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Unable to read historical camera evidence for %s", event_id)
+        finally:
+            _history_verification_tasks.pop(event_id, None)
+
+    for event_id in await asyncio.to_thread(retries):
+        _history_verification_tasks[event_id] = asyncio.create_task(retry(event_id))
 
 
 async def poll_all_controllers() -> list[AccessControl | None]:
@@ -500,12 +721,16 @@ async def poll_all_controllers() -> list[AccessControl | None]:
 
 async def run_controller_polling(
     publisher: Callable[[str, str], None] | None = None,
+    camera_evidence: CameraEvidence | None = None,
 ) -> None:
     """Refresh controller status and process scans throughout API uptime."""
-    global _publisher
+    global _publisher, _camera_evidence, _recognition_slots
     _publisher = publisher
+    _camera_evidence = camera_evidence
+    _recognition_slots = asyncio.Semaphore(2)
     listener_tasks: dict[str, asyncio.Task] = {}
     signatures: dict[str, tuple] = {}
+    last_snapshot_cleanup = 0.0
     try:
         while True:
             try:
@@ -533,7 +758,10 @@ async def run_controller_polling(
                             _listen_to_controller(device.id)
                         )
                 await poll_all_controllers()
-                await asyncio.to_thread(verify_pending_events)
+                await _verify_camera_events()
+                if time.time() - last_snapshot_cleanup > 3600:
+                    await asyncio.to_thread(cleanup_snapshots)
+                    last_snapshot_cleanup = time.time()
             except asyncio.CancelledError:
                 raise
             except Exception:
@@ -543,7 +771,15 @@ async def run_controller_polling(
         for task in listener_tasks.values():
             task.cancel()
         await asyncio.gather(*listener_tasks.values(), return_exceptions=True)
+        captures = list(_capture_tasks.values()) + list(_history_verification_tasks.values())
+        for task in captures:
+            task.cancel()
+        await asyncio.gather(*captures, return_exceptions=True)
+        _capture_tasks.clear()
+        _history_verification_tasks.clear()
         _publisher = None
+        _camera_evidence = None
+        _recognition_slots = None
         _stream_states.clear()
         _history_locks.clear()
 
@@ -607,7 +843,12 @@ async def _listen_to_controller(device_id: str) -> None:
                         history_task = asyncio.create_task(synchronize_controller_history(device_id))
                     if event.get("_connected"):
                         continue
-                    await asyncio.to_thread(_store_live_event, device_id, event)
+                    event_id = await asyncio.to_thread(_store_live_event, device_id, event)
+                    if event_id and event_id not in _capture_tasks:
+                        if len(_capture_tasks) < 64:
+                            _capture_tasks[event_id] = asyncio.create_task(_enrich_live_scan(event_id))
+                        else:
+                            logger.warning("Access camera evidence queue is full; using historical detections")
             finally:
                 if event_task is not None:
                     event_task.cancel()

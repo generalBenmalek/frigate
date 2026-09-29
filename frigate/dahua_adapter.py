@@ -562,7 +562,7 @@ class CgiProvider:
             {
                 name
                 for record in self._parse_records(text)
-                if str(record.get("CardNo", "")).strip() == card_number
+                if str(record.get("CardNo", "")).strip().casefold() == card_number.casefold()
                 for name in DahuaAccessController.record_names(record)
             }
         )

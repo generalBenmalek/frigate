@@ -192,11 +192,45 @@
     "unverified": "Not verified",
     "valid": "Valid",
     "warning": "Warning",
-    "unknown": "Unknown"
+    "unknown": "Unknown",
+    "retry": "Retry verification",
+    "retrying": "Checking evidence...",
+    "retryFailed": "Unable to retry verification. Try again shortly.",
+    "evidence": "Evidence: {{sources}}",
+    "clockAdjusted": "The controller clock differs from Frigate. Camera verification and footage use the time the live event arrived.",
+    "reasons": {
+      "collecting_evidence": "Collecting camera evidence and waiting for recognition updates.",
+      "owner_matched": "A recognized person matches a card owner.",
+      "identity_mismatch": "A recognized person does not match the card owners.",
+      "missing_owner": "No card owner name is available from the controller.",
+      "missing_camera": "Associate a camera with this controller to verify access events.",
+      "unrecognized_person": "A person was detected, but their identity could not be confirmed.",
+      "recognition_disabled": "A person was detected, but face recognition is disabled for this camera. Enable it and register the card owner's face to identify them.",
+      "no_person": "No matching person detection or recognized face was found in the camera window.",
+      "access_not_granted": "This event did not grant access to an identified user."
+    },
+    "sources": {
+      "history": "Object event history",
+      "timeline": "Detection timeline",
+      "live": "Live camera objects",
+      "snapshot": "Snapshot face recognition"
+    }
   },
   "footage": {
     "title": "Access event footage",
-    "unavailable": "No camera footage is available for this event."
+    "unavailable": "No camera footage is available for this event.",
+    "source": "Media source",
+    "retry": "Retry",
+    "loading": "Loading media...",
+    "snapshotAlt": "Camera snapshot for this access event",
+    "nextSnapshot": "Next snapshot",
+    "fallbackOrder": "Automatic tries preview, recorded clips, then snapshots. You can also choose a source.",
+    "modes": {
+      "auto": "Automatic",
+      "preview": "Preview",
+      "clip": "Recorded clip",
+      "snapshot": "Snapshots"
+    }
   },
   "delete": {
     "title": "Delete Access Controller",

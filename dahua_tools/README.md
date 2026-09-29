@@ -58,6 +58,43 @@ configured UI timezone. Select a row to see camera verification and footage
 in the separate selected-event section. Device failures retain stored history;
 unsupported or incomplete CGI pagination produces a visible history warning.
 
+## Camera verification and footage
+
+Associate a Frigate camera with the controller. Successful access scans for
+every authentication method are verified against overlapping person events,
+the detection timeline, and live person objects. For live scans, Frigate caches
+three camera screenshots at two-second intervals, including denied scans for
+footage, and tries its existing face
+recognizer on unidentified person crops. Recognition respects global and
+per-camera face settings, the recognition score threshold, and `min_faces`.
+Retrying the same image does not increase the recognition count.
+Live object identities continue to be sampled through the camera window,
+including objects whose events are not retained as snapshots or recordings.
+Register faces using names matching the controller's card owners.
+
+An identified owner produces `valid`; another identified person produces
+`warning`. Unidentified people or missing identity evidence produce `unknown`,
+with the reason shown in the selected-event section. Recordings and face
+training folders are not prerequisites for an already identified detection.
+Scans remain `pending` through their configured camera window plus a 30-second
+grace period for delayed recognition. Denied access remains `unverified`.
+Recent inconclusive scans are checked for updated detection identities for
+five minutes; older scans can be retried from the selected-event section.
+
+If a live controller timestamp differs from Frigate by more than 30 seconds,
+camera evidence and footage use event receipt time. The displayed controller
+timestamp remains unchanged. Historical-only events use their stored time and
+are never compared to an unrelated current live frame. Retry verification
+checks updated history, cached screenshots, saved person snapshots, and frames
+from recording history. Automatic historical image work runs at most two jobs
+concurrently. Screenshot files in `/tmp/cache/access_snapshots` expire after
+24 hours and are served only to administrators.
+
+Footage uses the media API and tries preview MP4, recording/object clips, then
+cached or object snapshots. The source selector also permits a manual choice.
+The Provider capabilities UI and its request are commented out for later
+re-enablement; backend capability endpoints remain available.
+
 ## Debugger
 
 Enter a device address, credentials, provider, and CGI event endpoint. Each

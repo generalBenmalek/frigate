@@ -1,6 +1,4 @@
-import tempfile
 import time
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import requests
@@ -10,7 +8,10 @@ from frigate.access_controller_service import (
     _access_granted_card_scan,
     _store_live_event,
     _store_record,
+    _save_recognized_evidence,
+    _verify_event,
     poll_controller,
+    serialize_access_event,
     verify_pending_events,
 )
 from frigate.models import (
@@ -18,13 +19,14 @@ from frigate.models import (
     AccessEvent,
     Event,
     Recordings,
+    Timeline,
 )
 from frigate.test.http_api.base_http_test import AuthTestClient, BaseTestHttp
 
 
 class TestHttpAccessController(BaseTestHttp):
     def setUp(self):
-        super().setUp([AccessControl, AccessEvent, Event, Recordings])
+        super().setUp([AccessControl, AccessEvent, Event, Recordings, Timeline])
         self.app = self.create_app()
 
     def tearDown(self):
@@ -227,6 +229,19 @@ class TestHttpAccessController(BaseTestHttp):
         _store_record(device, {**history, "RecNo": "43"}, ["Alice"], True)
         self.assertEqual(AccessEvent.select().count(), 2)
 
+    def test_history_does_not_replace_resolved_card_owners_with_one_event_name(self):
+        device = AccessControl.create(
+            id="ac_1", name="Door 1", ip_address="127.0.0.1", type="Dahua",
+            model="ASI", serial_number="", username="", password="",
+        )
+        row = {"CreateTime": 1000, "CardNo": "123", "CardName": "Alice", "Status": 1}
+        _store_record(device, row, ["Alice", "Bob"], True)
+        event = AccessEvent.get()
+        event.raw_record = {**event.raw_record, "_owner_names_resolved": True}
+        event.save()
+        _store_record(device, row, ["Alice"], True)
+        self.assertEqual(AccessEvent.get().raw_record["_owner_names"], ["Alice", "Bob"])
+
     def test_non_access_events_do_not_create_attendance_rows(self):
         device = AccessControl.create(
             id="ac_1", name="Door 1", ip_address="127.0.0.1", type="Dahua",
@@ -264,13 +279,13 @@ class TestHttpAccessController(BaseTestHttp):
         self.assertEqual(sync.call_args.args[1].timestamp(), 1790668800)
 
     def test_card_verification_uses_all_people_in_window(self):
-        scan_time = time.time() - 30
+        scan_time = time.time() - 60
         AccessEvent.create(
             id="scan-1",
             device_id="ac_1",
             occurred_at=scan_time,
             card_number="123",
-            raw_record={"CardNo": "123", "_owner_names": ["Alice"]},
+            raw_record={"CardNo": "123", "Status": 1, "_owner_names": ["Alice"]},
             verification_status="pending",
             people=[],
             camera="front_door",
@@ -279,27 +294,117 @@ class TestHttpAccessController(BaseTestHttp):
         Event.update(label="person", sub_label="Alice").where(
             Event.id == "person-1"
         ).execute()
-        self.insert_mock_recording("recording-1", scan_time - 15, scan_time + 15)
+        # Identified detections are evidence even with recordings disabled
+        # and without a face training folder remaining on disk.
+        verify_pending_events()
+        result = AccessEvent.get_by_id("scan-1")
+        assert result.verification_status == "valid"
+        assert [person["name"] for person in result.people] == ["Alice"]
 
-        with tempfile.TemporaryDirectory() as face_dir:
-            (Path(face_dir) / "Alice").mkdir()
-            with patch("frigate.access_controller_service.FACE_DIR", face_dir):
-                verify_pending_events()
-                result = AccessEvent.get_by_id("scan-1")
-                assert result.verification_status == "valid"
-                assert [person["name"] for person in result.people] == ["Alice"]
+        self.insert_mock_event("person-2", scan_time - 1, scan_time + 3)
+        Event.update(label="person", sub_label="Bob").where(
+            Event.id == "person-2"
+        ).execute()
+        result.verification_status = "pending"
+        result.save()
+        verify_pending_events()
+        assert AccessEvent.get_by_id("scan-1").verification_status == "warning"
 
-                self.insert_mock_event("person-2", scan_time - 1, scan_time + 3)
-                Event.update(label="person", sub_label="Bob").where(
-                    Event.id == "person-2"
-                ).execute()
-                result.verification_status = "pending"
-                result.save()
-                verify_pending_events()
-                assert AccessEvent.get_by_id("scan-1").verification_status == "warning"
+    def test_live_scan_with_old_clock_uses_receipt_time_for_camera_evidence(self):
+        now = time.time()
+        device = AccessControl.create(
+            id="ac_1", name="Door 1", ip_address="127.0.0.1", type="Dahua",
+            model="ASI", serial_number="", username="", password="",
+            associated_camera="front_door", event_tracking_started_at=now,
+        )
+        with patch("frigate.access_controller_service.time.time", return_value=now):
+            event_id = _store_live_event(device.id, {"code": "AccessControl", "data": {
+                "CreateTime": 946656023, "CardNo": "123", "CardName": "Alice",
+                "Status": 1, "Method": 11,
+            }})
+        event = AccessEvent.get_by_id(event_id)
+        assert event.verification_status == "pending"
+        assert event.occurred_at == 946656023
+        assert event.raw_record["_verification_time"] == now
+        self.insert_mock_event("person-1", now - 2, now + 2)
+        Event.update(label="person", sub_label="Alice").where(Event.id == "person-1").execute()
+        _verify_event(event_id, now + 60)
+        event = AccessEvent.get_by_id(event_id)
+        assert event.verification_status == "valid"
+        serialized = serialize_access_event(event)
+        assert serialized["clip_start"] == now - event.seconds_before
+        assert serialized["clock_adjusted"] is True
 
-                (Path(face_dir) / "Alice").rmdir()
-                result.verification_status = "pending"
-                result.save()
-                verify_pending_events()
-                assert AccessEvent.get_by_id("scan-1").verification_status == "unknown"
+    def test_stored_unverified_success_can_use_timeline_identity(self):
+        scan_time = time.time() - 60
+        event = AccessEvent.create(
+            id="legacy", device_id="ac_1", occurred_at=scan_time,
+            card_number="123", camera="front_door",
+            raw_record={"CardNo": "123", "Status": 1, "CardName": "Alice"},
+        )
+        Timeline.create(
+            timestamp=scan_time, camera="front_door", source="tracked_object",
+            source_id="person-timeline", class_type="visible",
+            data={"label": "person", "sub_label": ["Alice", 0.95]},
+        )
+        verify_pending_events()
+        event = AccessEvent.get_by_id(event.id)
+        assert event.verification_status == "valid"
+        assert event.raw_record["_verification_sources"] == ["timeline"]
+
+    def test_cached_live_identity_can_verify_without_saved_detection(self):
+        event = AccessEvent.create(
+            id="live-only", device_id="ac_1", occurred_at=time.time() - 60,
+            camera="front_door", verification_status="pending",
+            raw_record={"Status": 1, "UserID": "1", "CardName": "Alice",
+                        "_camera_people": [{"event_id": "active-person", "name": "Alice",
+                                             "source": "live", "start_time": time.time() - 60,
+                                             "end_time": None}]},
+        )
+        verify_pending_events()
+        assert AccessEvent.get_by_id(event.id).verification_status == "valid"
+
+    def test_denied_access_is_not_verified_from_a_matching_person(self):
+        event = AccessEvent.create(
+            id="denied", device_id="ac_1", occurred_at=time.time() - 60,
+            camera="front_door", verification_status="pending",
+            raw_record={"Status": 1, "ErrorCode": 16, "CardNo": "123", "CardName": "Alice"},
+        )
+        verify_pending_events()
+        event = AccessEvent.get_by_id(event.id)
+        assert event.verification_status == "unverified"
+        assert event.raw_record["_verification_reason"] == "access_not_granted"
+
+    def test_evidence_endpoints_require_an_administrator(self):
+        with TestClient(self.app) as client:
+            assert client.get("/access-controllers/events/scan/snapshots/0").status_code == 403
+            assert client.post("/access-controllers/events/scan/verify").status_code == 403
+
+    def test_manual_verification_returns_updated_evidence(self):
+        AccessEvent.create(
+            id="retry-scan", device_id="ac_1", occurred_at=time.time() - 60,
+            camera="front_door", raw_record={"Status": 1, "UserID": "1", "CardName": "Alice"},
+        )
+        async def retry(event_id):
+            _verify_event(event_id)
+
+        with AuthTestClient(self.app) as client:
+            with patch("frigate.api.access_controller.reverify_access_event", new=AsyncMock(side_effect=retry)):
+                response = client.post("/access-controllers/events/retry-scan/verify")
+        assert response.status_code == 200
+        assert response.json()["verification_status"] == "unknown"
+        assert response.json()["verification_reason"] == "no_person"
+
+    def test_snapshot_recognition_counts_distinct_frames(self):
+        event = AccessEvent.create(
+            id="face-count", device_id="ac_1", occurred_at=time.time() - 60,
+            camera="front_door", verification_status="pending",
+            raw_record={"Status": 1, "UserID": "1", "CardName": "Alice"},
+        )
+        person = {"event_id": "person-1", "name": "Alice", "source": "snapshot",
+                  "start_time": event.occurred_at, "end_time": event.occurred_at}
+        _save_recognized_evidence(event.id, [person], 2)
+        _save_recognized_evidence(event.id, [person], 2)
+        assert not AccessEvent.get_by_id(event.id).raw_record.get("_camera_people")
+        _save_recognized_evidence(event.id, [{**person, "start_time": event.occurred_at + 2}], 2)
+        assert AccessEvent.get_by_id(event.id).verification_status == "valid"

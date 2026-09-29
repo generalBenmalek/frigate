@@ -1,3 +1,5 @@
+import axios from "axios";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { LuPlay } from "react-icons/lu";
 import { Button } from "@/components/ui/button";
@@ -31,7 +33,28 @@ export default function AccessEvents({
   selectedEventId, onSelectEvent, onViewFootage,
 }: Props) {
   const { t } = useTranslation("views/organization");
+  const [verifying, setVerifying] = useState(false);
+  const [verificationError, setVerificationError] = useState(false);
+  const [verifiedEvent, setVerifiedEvent] = useState<AccessEvent | null>(null);
   const selected = events.find((event) => event.id === selectedEventId);
+  const details = selected?.id === verifiedEvent?.id ? verifiedEvent : selected;
+  useEffect(() => {
+    setVerifiedEvent(null);
+    setVerificationError(false);
+  }, [selected]);
+  const retryVerification = async () => {
+    if (!selected) return;
+    setVerifying(true);
+    setVerificationError(false);
+    try {
+      const { data } = await axios.post<AccessEvent>(`access-controllers/events/${encodeURIComponent(selected.id)}/verify`);
+      setVerifiedEvent(data);
+    } catch {
+      setVerificationError(true);
+    } finally {
+      setVerifying(false);
+    }
+  };
   const formatTime = (event: AccessEvent) => formatUnixTimestampToDateTime(event.timestamp, {
     timezone: timezone.replace(/^UTC(?=[+-])/, ""), date_format: "yyyy-MM-dd HH:mm:ss",
   });
@@ -150,18 +173,25 @@ export default function AccessEvents({
       </div>
       <section className="space-y-3 rounded-lg border bg-card p-4" aria-label={t("events.selected.title")}>
         <h2 className="font-semibold">{t("events.selected.title")}</h2>
-        {selected ? <>
+        {details ? <>
           <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <div><dt className="text-sm text-muted-foreground">{t("events.table.device")}</dt><dd>{selected.device_name || selected.device_id}</dd></div>
-            <div><dt className="text-sm text-muted-foreground">{t("events.table.owners")}</dt><dd>{selected.owner_names?.join(", ") || "-"}</dd></div>
-            <div><dt className="text-sm text-muted-foreground">{t("events.table.people")}</dt><dd>{selected.people?.map((person) => person.name).join(", ") || "-"}</dd></div>
-            <div><dt className="text-sm text-muted-foreground">{t("events.table.verification")}</dt><dd className={verificationClasses[selected.verification_status ?? "unverified"]}>{t(`verification.${selected.verification_status ?? "unverified"}`)}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("events.table.device")}</dt><dd>{details.device_name || details.device_id}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("events.table.owners")}</dt><dd>{details.owner_names?.join(", ") || "-"}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("events.table.people")}</dt><dd>{details.people?.map((person) => person.name).join(", ") || "-"}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("events.table.verification")}</dt><dd className={verificationClasses[details.verification_status ?? "unverified"]}>{t(`verification.${details.verification_status ?? "unverified"}`)}</dd></div>
           </dl>
-          <Button variant="outline" disabled={!selected.camera || selected.clip_start === undefined || selected.clip_end === undefined} onClick={() => onViewFootage(selected)}>
+          {details.verification_reason && <p className="text-sm text-muted-foreground">{t(`verification.reasons.${details.verification_reason}`)}</p>}
+          {!!details.verification_sources?.length && <p className="text-sm text-muted-foreground">{t("verification.evidence", {
+            sources: details.verification_sources.map((source) => t(`verification.sources.${source}`)).join(", "),
+          })}</p>}
+          {details.clock_adjusted && <p className="text-sm text-amber-500">{t("verification.clockAdjusted")}</p>}
+          {verificationError && <p role="alert" className="text-sm text-destructive">{t("verification.retryFailed")}</p>}
+          <Button variant="outline" disabled={verifying} onClick={() => void retryVerification()}>{verifying ? t("verification.retrying") : t("verification.retry")}</Button>
+          <Button variant="outline" disabled={!details.camera && !details.snapshots?.length && !details.people?.length} onClick={() => onViewFootage(details)}>
             <LuPlay className="mr-2 size-4" />{t("button.viewFootage")}
           </Button>
           <details><summary className="cursor-pointer text-sm">{t("events.table.details")}</summary>
-            <pre className="scrollbar-container mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(selected.raw ?? selected, null, 2)}</pre>
+            <pre className="scrollbar-container mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">{JSON.stringify(details.raw ?? details, null, 2)}</pre>
           </details>
         </> : <p className="text-sm text-muted-foreground">{t("events.selected.empty")}</p>}
       </section>

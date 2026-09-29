@@ -6,12 +6,12 @@ import useSWR from "swr";
 import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
 import { useAccessControllerEvents } from "@/hooks/use-access-controller-events";
 import AccessEvents from "@/components/access/AccessEvents";
+import AccessEventFootage from "@/components/access/AccessEventFootage";
 import { emptyAccessEventFilters, type AccessEvent as EventRecord, type AccessEventFilters } from "@/types/accessController";
 import { accessFilterTimestamp } from "@/utils/accessController";
 import { getResolvedTimeZone } from "@/utils/dateUtil";
 import { baseUrl } from "@/api/baseUrl";
 import { Button } from "@/components/ui/button";
-import { GenericVideoPlayer } from "@/components/player/GenericVideoPlayer";
 import { FrigateConfig } from "@/types/frigateConfig";
 import {
   AlertDialog,
@@ -506,22 +506,7 @@ export default function AccessControllerPage() {
       )}
 
       {footageEvent && (
-        <Dialog open={true} onOpenChange={(open) => !open && setFootageEvent(null)}>
-          <DialogContent className="max-w-4xl">
-            <DialogHeader>
-              <DialogTitle>{t("footage.title", { ns: "views/organization" })}</DialogTitle>
-            </DialogHeader>
-            {footageEvent.camera && footageEvent.clip_start !== undefined && footageEvent.clip_end !== undefined ? (
-              <div className="aspect-video">
-                <GenericVideoPlayer
-                  source={`${baseUrl}api/vod/clip/${encodeURIComponent(footageEvent.camera)}/start/${footageEvent.clip_start}/end/${footageEvent.clip_end}/index.m3u8`}
-                />
-              </div>
-            ) : (
-              <p>{t("footage.unavailable", { ns: "views/organization" })}</p>
-            )}
-          </DialogContent>
-        </Dialog>
+        <AccessEventFootage event={events.find((event) => event.id === footageEvent.id) ?? footageEvent} onClose={() => setFootageEvent(null)} />
       )}
 
       {deleteTarget && (
@@ -799,6 +784,8 @@ function ControllerDetailsDialog({
     `access-controllers/${device.id}/system-info`,
     { revalidateOnFocus: false },
   );
+  /* Provider capabilities are temporarily disabled. Re-enable this query,
+     label maps, and the matching JSX section together.
   const { data: capabilityResult } = useSWR<{
     capabilities: Record<string, { status: string; reason: string }>;
   }>(`access-controllers/${device.id}/capabilities`, { revalidateOnFocus: false });
@@ -824,6 +811,7 @@ function ControllerDetailsDialog({
     supported: t("details.capabilityStatuses.available"),
     unsupported: t("details.capabilityStatuses.unsupported"),
   };
+  */
 
   const previewUrl = preview?.source === "frigate_camera"
     ? `${baseUrl}${preview.image_url}`
@@ -893,6 +881,7 @@ function ControllerDetailsDialog({
             </div>
           </section>
 
+          {/* Provider capabilities are temporarily disabled.
           <section className="space-y-2">
             <h3 className="font-semibold">{t("details.capabilities")}</h3>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -907,6 +896,7 @@ function ControllerDetailsDialog({
               ))}
             </div>
           </section>
+          */}
         </div>
       </DialogContent>
     </Dialog>

@@ -15,7 +15,20 @@ export type AccessEvent = {
   type?: string | null;
   owner_names?: string[];
   verification_status?: "pending" | "unverified" | "valid" | "warning" | "unknown";
-  people?: { event_id: string; name: string; start_time: number; end_time: number | null }[];
+  verification_reason?: string | null;
+  verification_sources?: string[];
+  evidence_time?: number;
+  clock_adjusted?: boolean;
+  snapshots?: { url: string; timestamp: number }[];
+  people?: {
+    event_id: string;
+    name: string;
+    start_time: number;
+    end_time: number | null;
+    source?: string;
+    has_clip?: boolean;
+    has_snapshot?: boolean;
+  }[];
   camera?: string | null;
   clip_start?: number;
   clip_end?: number;
