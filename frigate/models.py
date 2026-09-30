@@ -256,6 +256,8 @@ class AccessControl(Model):
     event_tracking_started_at = FloatField(null=True)
     last_event_poll = FloatField(null=True)
 
+    class Meta:
+        table_name = "access_control"
 
 class AccessEvent(Model):
     id = CharField(primary_key=True, max_length=64)

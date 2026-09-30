@@ -17,7 +17,7 @@ export function useAccessControllerEvents(
   const [streamStates, setStreamStates] = useState<Record<string, string>>({});
   const socketState = useWsConnectionState();
   const controllerIds = useMemo(() => new Set(JSON.parse(controllerKey) as string[]), [controllerKey]);
-  const request = useRef<AbortController>();
+  const request = useRef<AbortController | null>(null);
   const buffered = useRef(new Map<string, AccessEvent>());
 
   const refreshEvents = useCallback(async () => {

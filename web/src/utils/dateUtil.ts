@@ -94,7 +94,7 @@ const formatMap: {
  * The returned string will either be a named time zone (e.g., "America/Los_Angeles"), or it will follow
  * the format "UTC±HH:MM".
  */
-const getResolvedTimeZone = () => {
+export const getResolvedTimeZone = () => {
   try {
     return Intl.DateTimeFormat().resolvedOptions().timeZone;
   } catch (error) {

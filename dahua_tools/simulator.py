@@ -654,7 +654,7 @@ def main() -> None:
     """Run the local simulator without starting the employee portal."""
     import uvicorn
 
-    uvicorn.run(app, host=os.environ.get("DAHUA_SIM_HOST", "127.0.0.1"), port=int(os.environ.get("DAHUA_SIM_PORT", "8080")))
+    uvicorn.run(app, host=os.environ.get("DAHUA_SIM_HOST", "0.0.0.0"), port=int(os.environ.get("DAHUA_SIM_PORT", "8080")))
 
 
 if __name__ == "__main__":
