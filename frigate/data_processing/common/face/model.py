@@ -1,7 +1,9 @@
 import logging
+import hashlib
 import os
 import queue
 import threading
+from pathlib import Path
 from abc import ABC, abstractmethod
 
 import cv2
@@ -12,6 +14,7 @@ from frigate.config import FrigateConfig
 from frigate.const import FACE_DIR, MODEL_CACHE_DIR
 from frigate.embeddings.onnx.face_embedding import ArcfaceEmbedding, FaceNetEmbedding
 from frigate.log import redirect_output_to_logger
+from frigate.util.path import safe_join, sanitize_path_component
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +25,8 @@ class FaceRecognizer(ABC):
     def __init__(self, config: FrigateConfig) -> None:
         self.config = config
         self.landmark_detector: cv2.face.Facemark | None = None
+        self.identity_cache: dict[str, tuple[str, np.ndarray]] = {}
+        self.embedding_lock = threading.Lock()
         self.init_landmark_detector()
 
     @abstractmethod
@@ -132,6 +137,60 @@ class FaceRecognizer(ABC):
         else:
             return 0.0
 
+    def embed_face(self, image: np.ndarray) -> np.ndarray:
+        """Share alignment and model instances safely with classifier building."""
+        with self.embedding_lock:
+            aligned = self.align_face(image, image.shape[1], image.shape[0])
+            return self.face_embedder([aligned])[0].squeeze()
+
+    def verify_identity(self, face_image: np.ndarray, name: str, signature: str) -> float | None:
+        """Compare only the requested identity using the loaded face embedder.
+
+        The existing classifier remains an all-label search. Portal verification
+        deliberately accesses a single class mean and never searches other labels.
+        """
+        if not self.landmark_detector:
+            return None
+        folder = safe_join(FACE_DIR, name)
+        if folder is None or name == "train" or sanitize_path_component(name) != name:
+            return None
+        path = Path(folder)
+        if not path.is_dir() or path.is_symlink():
+            return None
+        files = sorted(
+            (item.name, item.stat().st_size, item.stat().st_mtime_ns)
+            for item in path.iterdir()
+            if item.suffix.lower() in {".jpg", ".jpeg", ".png", ".webp"}
+            and item.is_file() and not item.is_symlink() and item.stat().st_size > 0
+        )
+        current_signature = hashlib.sha256(repr(files).encode()).hexdigest()
+        if not files or current_signature != signature:
+            return None
+        cached = self.identity_cache.get(name)
+        if cached is None or cached[0] != signature:
+            embeddings = []
+            for filename, _, _ in files:
+                reference = cv2.imread(str(path / filename))
+                if reference is None:
+                    continue
+                embeddings.append(self.embed_face(reference))
+            if not embeddings:
+                return None
+            # Reuse the existing training and scoring helpers. A versioned
+            # target cache cannot be overwritten by an older classifier build.
+            mean = build_class_mean(embeddings)
+            self.identity_cache[name] = (signature, mean)
+        else:
+            mean = cached[1]
+        embedding = self.embed_face(face_image)
+        denominator = np.linalg.norm(embedding) * np.linalg.norm(mean)
+        if not np.isfinite(denominator) or denominator <= 0:
+            return None
+        similarity = float(np.dot(embedding, mean) / denominator)
+        median = 0.5 if isinstance(self, FaceNetRecognizer) else 0.3
+        confidence = similarity_to_confidence(similarity, median=median)
+        return max(0.0, round(confidence - self.get_blur_confidence_reduction(face_image), 2))
+
 
 def build_class_mean(
     embs: list[np.ndarray],
@@ -225,6 +284,7 @@ class FaceNetRecognizer(FaceRecognizer):
 
     def clear(self) -> None:
         self.mean_embs = {}
+        self.identity_cache.clear()
 
     def run_build_task(self) -> None:
         self.model_builder_queue = queue.Queue()
@@ -250,8 +310,7 @@ class FaceNetRecognizer(FaceRecognizer):
                     if img is None:
                         continue  # type: ignore[unreachable]
 
-                    img = self.align_face(img, img.shape[1], img.shape[0])
-                    emb = self.face_embedder([img])[0].squeeze()
+                    emb = self.embed_face(img)
                     face_embeddings_map[name].append(emb)
 
                 idx += 1
@@ -304,8 +363,7 @@ class FaceNetRecognizer(FaceRecognizer):
         blur_reduction = self.get_blur_confidence_reduction(face_image)
 
         # align face and run recognition
-        img = self.align_face(face_image, face_image.shape[1], face_image.shape[0])
-        embedding = self.face_embedder([img])[0].squeeze()
+        embedding = self.embed_face(face_image)
 
         score: float = 0
         label = ""
@@ -336,6 +394,7 @@ class ArcFaceRecognizer(FaceRecognizer):
 
     def clear(self) -> None:
         self.mean_embs = {}
+        self.identity_cache.clear()
 
     def run_build_task(self) -> None:
         self.model_builder_queue = queue.Queue()
@@ -361,8 +420,7 @@ class ArcFaceRecognizer(FaceRecognizer):
                     if img is None:
                         continue  # type: ignore[unreachable]
 
-                    img = self.align_face(img, img.shape[1], img.shape[0])
-                    emb = self.face_embedder([img])[0].squeeze()  # type: ignore[arg-type]
+                    emb = self.embed_face(img)
                     face_embeddings_map[name].append(emb)
 
                 idx += 1
@@ -415,8 +473,7 @@ class ArcFaceRecognizer(FaceRecognizer):
         blur_reduction = self.get_blur_confidence_reduction(face_image)
 
         # align face and run recognition
-        img = self.align_face(face_image, face_image.shape[1], face_image.shape[0])
-        embedding = self.face_embedder([img])[0].squeeze()  # type: ignore[arg-type]
+        embedding = self.embed_face(face_image)
 
         score: float = 0
         label = ""

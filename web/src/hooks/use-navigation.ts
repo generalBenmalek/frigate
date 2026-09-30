@@ -20,6 +20,7 @@ export const ID_FACE_LIBRARY = 6;
 export const ID_CLASSIFICATION = 7;
 export const ID_CHAT = 8;
 export const ID_ORGANIZATION = 9;
+export const ID_EMPLOYEES = 10;
 
 export default function useNavigation(
   variant: "primary" | "secondary" = "primary",
@@ -107,6 +108,14 @@ export default function useNavigation(
           title: "menu.organization",
           url: "/access-controller",
           enabled: isDesktop && isAdmin,
+        },
+        {
+          id: ID_EMPLOYEES,
+          variant,
+          icon: LuUserCog,
+          title: "menu.employees",
+          url: "/employees",
+          enabled: isAdmin,
         },
       ] as NavData[],
     [config?.face_recognition?.enabled, hasChatAgent, variant, isAdmin, isDesktop],

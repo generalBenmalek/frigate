@@ -21,6 +21,7 @@ class EmbeddingsRequestEnum(Enum):
     # face
     clear_face_classifier = "clear_face_classifier"
     recognize_face = "recognize_face"
+    verify_employee_face = "verify_employee_face"
     register_face = "register_face"
     reprocess_face = "reprocess_face"
     # semantic search

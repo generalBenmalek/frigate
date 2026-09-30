@@ -55,6 +55,8 @@ from frigate.api import (
     classification,
     debug_replay,
     event,
+    employees,
+    employee_portal,
     export,
     media,
     motion_search,
@@ -97,11 +99,19 @@ AUTHENTICATED = "any"
 CAMERA = "camera"
 ALL_CAMERAS = "all_cameras"
 ADMIN = "admin"
+EMPLOYEE = "employee"
 
 ADMIN_SCHEME = "frigateAdminAuth"
 USER_SCHEME = "frigateUserAuth"
+EMPLOYEE_SCHEME = "frigateEmployeeAuth"
 
 SECURITY_SCHEMES = {
+    EMPLOYEE_SCHEME: {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "frigate_employee_token",
+        "description": "Employee-only session issued on the separate employee portal. Frigate administrator sessions cannot substitute for this token.",
+    },
     ADMIN_SCHEME: {
         "type": "apiKey",
         "in": "cookie",
@@ -127,6 +137,7 @@ SECURITY_SCHEMES = {
 
 # How each access level maps to a rendered note.
 ACCESS_NOTES = {
+    EMPLOYEE: "**Access:** Authenticated employee. Use the employee portal port, default 8972.",
     PUBLIC: "**Access:** Public — no authentication required.",
     AUTHENTICATED: "**Access:** Any authenticated user.",
     CAMERA: "**Access:** Authenticated user with access to the referenced camera.",
@@ -145,6 +156,7 @@ def build_app() -> FastAPI:
     app = FastAPI()
     routers = [
         access_controller.router,
+        employees.router,
         auth.router,
         camera.router,
         chat.router,
@@ -162,6 +174,9 @@ def build_app() -> FastAPI:
     ]
     for router in routers:
         app.include_router(router)
+    # Flatten the isolated mount only for documentation. Runtime keeps its
+    # authentication independent of the main app's global admin dependency.
+    app.include_router(employee_portal.router, prefix="/employee")
     return app
 
 
@@ -191,7 +206,9 @@ def _route_markers(route: APIRoute) -> tuple[set[str], list[str] | None]:
         qualname = getattr(call, "__qualname__", "") or ""
         name = getattr(call, "__name__", "") or ""
 
-        if "role_checker" in qualname:
+        if name == "require_employee":
+            markers.add(EMPLOYEE)
+        elif "role_checker" in qualname:
             markers.add(ADMIN)
             try:
                 roles = inspect.getclosurevars(call).nonlocals.get("required_roles")
@@ -254,6 +271,8 @@ def _classify_base(
     """Resolve the access level from route-level dependencies and exempt rules."""
     markers, admin_roles = _route_markers(route)
     path = route.path
+    if path.startswith("/employee/"):
+        return (EMPLOYEE if EMPLOYEE in markers else PUBLIC), None, None
     is_camera_path = _first_segment(path) == "{camera_name}"
     exempt = path in exempt_paths or path.startswith(exempt_prefixes) or is_camera_path
 
@@ -345,6 +364,8 @@ def security_for(level: str) -> list:
         return []
     if level == ADMIN:
         return [{ADMIN_SCHEME: []}]
+    if level == EMPLOYEE:
+        return [{EMPLOYEE_SCHEME: []}]
     # AUTHENTICATED, CAMERA and ALL_CAMERAS all require any authenticated
     # session; the camera scoping is conveyed in the note and x-required-role.
     return [{USER_SCHEME: []}]

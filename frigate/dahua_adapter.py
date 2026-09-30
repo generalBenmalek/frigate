@@ -165,6 +165,8 @@ class DahuaProvider(Protocol):
 
     async def get_doors(self) -> list[dict[str, Any]]: ...
 
+    async def get_users(self) -> dict[str, Any]: ...
+
     async def get_door_status(self, door_id: str) -> dict[str, Any]: ...
 
     async def open_door(self, door_id: str) -> dict[str, Any]: ...
@@ -546,6 +548,114 @@ class CgiProvider:
         self.history_incomplete = True
         logger.warning("Dahua history pagination reached the safety limit")
         return records
+
+    async def get_users(self) -> dict[str, Any]:
+        """Enumerate user permissions, falling back to legacy card records.
+
+        Modern directory door values are configuration subscripts. Legacy card
+        values are channel numbers. Neither missing permissions nor an unknown
+        door is interpreted as unrestricted access.
+        """
+        path = "/cgi-bin/AccessUser.cgi"
+        try:
+            text = await self._text("get_users", path, {"action": "startFind"})
+        except DahuaOperationError as err:
+            if err.status not in {400, 404, 405, 501} and not isinstance(err, DahuaNotSupported):
+                raise
+            return await self._legacy_users()
+        try:
+            search = json.loads(text)
+            token = int(search["Token"])
+            total = int(search["Total"])
+            count = min(100, max(1, int(search.get("Caps", search.get("Caps ", 100)))))
+        except (json.JSONDecodeError, TypeError, ValueError, KeyError):
+            return await self._legacy_users()
+        if total < 0 or total > 100000:
+            raise DahuaOperationError(self.name, "get_users", "Invalid user directory size")
+        records: list[dict[str, Any]] = []
+        signatures: set[str] = set()
+        try:
+            while len(records) < total:
+                text = await self._text("get_users", path, {
+                    "action": "doFind", "Token": token,
+                    "Offset": len(records), "Count": count,
+                })
+                page = json.loads(text)
+                users = page.get("Info", page.get("info"))
+                signature = json.dumps(users, sort_keys=True)
+                if not isinstance(users, list) or not users or signature in signatures:
+                    raise DahuaOperationError(self.name, "get_users", "Incomplete user directory")
+                signatures.add(signature)
+                records.extend(users)
+                if len(records) > total:
+                    raise DahuaOperationError(self.name, "get_users", "Inconsistent user directory size")
+        finally:
+            try:
+                await self._text("get_users", path, {"action": "stopFind", "Token": token})
+            except DahuaOperationError:
+                logger.warning("Unable to release a controller user search")
+        return {"users": self._normalize_users(records, modern=True), "limited": False}
+
+    async def _legacy_users(self) -> dict[str, Any]:
+        records: list[dict[str, Any]] = []
+        signatures: set[str] = set()
+        for _ in range(1000):
+            text = await self._text("get_users", "/cgi-bin/recordFinder.cgi", {
+                "action": "find", "name": "AccessControlCard", "count": 100,
+                "StartIndex": len(records),
+            })
+            fields = self._parse_fields(text)
+            if "found" not in fields and "totalCount" not in fields:
+                raise DahuaNotSupported(self.name, "get_users", "User enumeration is unavailable")
+            page = self._parse_records(text)
+            total = int(fields.get("totalCount", 0))
+            if not page:
+                if total > len(records):
+                    raise DahuaOperationError(self.name, "get_users", "Incomplete user directory")
+                return {"users": self._normalize_users(records, modern=False), "limited": True}
+            signature = json.dumps(page, sort_keys=True)
+            if signature in signatures:
+                raise DahuaOperationError(self.name, "get_users", "Repeated user directory page")
+            signatures.add(signature)
+            records.extend(page)
+            if (total and len(records) >= total) or (not total and len(page) < 100):
+                return {"users": self._normalize_users(records, modern=False), "limited": True}
+        raise DahuaOperationError(self.name, "get_users", "User directory exceeds pagination limit")
+
+    def _normalize_users(self, records: list[dict[str, Any]], *, modern: bool) -> list[dict[str, Any]]:
+        users: dict[str, dict[str, Any]] = {}
+        for record in records:
+            user_id = str(record.get("UserID", "")).strip()
+            if not user_id:
+                continue
+            name = str(record.get("UserName") or record.get("CardName") or user_id).strip()
+            active = (
+                str(record.get("UserStatus", "0")) == "0"
+                and str(record.get("UserType", "0")) != "1"
+                if modern else
+                str(record.get("IsValid", "true")).lower() not in {"false", "0"}
+                and str(record.get("CardStatus", "0")) == "0"
+                and str(record.get("CardType", "0")) != "4"
+            )
+            raw_doors = record.get("Doors", [])
+            if not isinstance(raw_doors, list):
+                raw_doors = [value for key, value in record.items() if re.fullmatch(r"Doors\[\d+\]", key)]
+            if not raw_doors:
+                raw_doors = [value for key, value in record.items() if re.fullmatch(r"Doors\[\d+\]", key)]
+            doors = set()
+            for value in raw_doors:
+                if not isinstance(value, (int, str)) or isinstance(value, bool):
+                    continue
+                try:
+                    channel = int(value) + (1 if modern else 0)
+                except (TypeError, ValueError):
+                    continue
+                if channel > 0 and active:
+                    doors.add(str(channel))
+            user = users.setdefault(user_id, {"user_id": user_id, "name": name, "active": False, "doors": []})
+            user["active"] = user["active"] or active
+            user["doors"] = sorted(set(user["doors"]) | doors)
+        return list(users.values())
 
     async def get_card_owners(self, card_number: str) -> list[str]:
         text = await self._text(
@@ -982,6 +1092,7 @@ class UnavailableProvider:
             }
             for operation in (
                 "get_system_info",
+                "get_users",
                 "is_online",
                 "get_access_records",
                 "get_card_owners",
@@ -1156,6 +1267,12 @@ class DahuaAccessController:
     async def get_doors_async(self) -> list[dict[str, Any]]:
         return await self._provider_call("get_doors")
 
+    async def get_users_async(self) -> dict[str, Any]:
+        """Return normalized user records from a capable configured provider."""
+        if not callable(getattr(self.provider, "get_users", None)):
+            raise DahuaNotSupported(self.provider_name, "get_users", "Provider does not support user enumeration")
+        return await self._provider_call("get_users")
+
     def get_doors(self) -> list[dict[str, Any]]:
         return _sync(self.get_doors_async())
 
@@ -1206,6 +1323,7 @@ class DahuaAccessController:
         """Report the selected provider and the runtime state of each feature."""
         operations = (
             "get_system_info",
+            "get_users",
             "is_online",
             "get_access_records",
             "get_card_owners",

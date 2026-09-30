@@ -51,6 +51,8 @@ i18n
       "views/classificationModel",
       "views/configEditor",
       "views/events",
+      "views/employees",
+      "views/employeePortal",
       "views/explore",
       "views/exports",
       "views/faceLibrary",

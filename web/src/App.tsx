@@ -31,6 +31,7 @@ const Logs = lazy(() => import("@/pages/Logs"));
 const AccessDenied = lazy(() => import("@/pages/AccessDenied"));
 const Replay = lazy(() => import("@/pages/Replay"));
 const AccessController = lazy(() => import("@/pages/AccessController"));
+const Employees = lazy(() => import("@/pages/Employees"));
 
 function App() {
   const { data: config } = useSWR<FrigateConfig>("config", {
@@ -106,6 +107,7 @@ function DefaultAppView() {
               <Route path="/classification" element={<Classification />} />
               <Route path="/chat" element={<Chat />} />
               <Route path="/access-controller" element={<AccessController />} />
+              <Route path="/employees" element={<Employees />} />
               <Route path="/organization" element={<AccessController />} />
               <Route path="/playground" element={<UIPlayground />} />{" "}
               <Route path="/replay" element={<Replay />} />{" "}

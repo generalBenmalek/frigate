@@ -254,7 +254,8 @@ class EmbeddingsContext:
             EmbeddingsRequestEnum.clear_face_classifier.value, None
         )
 
-    def rename_face(self, old_name: str, new_name: str) -> None:
+    def rename_face(self, old_name: str, new_name: str, notify_classifier: bool = True) -> None:
+        """Rename a face library, optionally leaving notification to the caller."""
         valid_name_pattern = r"^[\p{L}\p{N}\s'_-]{1,50}$"
 
         try:
@@ -286,9 +287,10 @@ class EmbeddingsContext:
 
         os.rename(old_path, new_path)
 
-        self.requestor.send_data(
-            EmbeddingsRequestEnum.clear_face_classifier.value, None
-        )
+        if notify_classifier:
+            self.requestor.send_data(
+                EmbeddingsRequestEnum.clear_face_classifier.value, None
+            )
 
     def update_description(self, event_id: str, description: str) -> None:
         self.requestor.send_data(

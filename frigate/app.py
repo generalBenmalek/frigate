@@ -59,6 +59,12 @@ from frigate.log import _stop_logging
 from frigate.models import (
     AccessControl,
     AccessEvent,
+    Employee,
+    EmployeeSource,
+    EmployeeDoorOverride,
+    EmployeeAccessSettings,
+    EmployeeAccessAttempt,
+    EmployeeControllerSync,
     Event,
     Export,
     Previews,
@@ -275,6 +281,12 @@ class FrigateApp:
         )
         models = [
             AccessEvent,
+            Employee,
+            EmployeeSource,
+            EmployeeDoorOverride,
+            EmployeeAccessSettings,
+            EmployeeAccessAttempt,
+            EmployeeControllerSync,
             Event,
             Export,
             Previews,
@@ -347,7 +359,7 @@ class FrigateApp:
         self.dispatcher.profile_manager = self.profile_manager
 
     def start_detectors(self) -> None:
-        for name in self.config.cameras.keys():
+        for name in [*self.config.cameras, "frigate.employee-verification"]:
             try:
                 largest_frame = max(
                     [
@@ -638,6 +650,8 @@ class FrigateApp:
                     self.dispatcher,
                     self.profile_manager,
                     config_holder=self.config_holder,
+                    employee_detection_queue=self.detection_queue,
+                    employee_stop_event=self.stop_event,
                 ),
                 host="127.0.0.1",
                 port=5001,

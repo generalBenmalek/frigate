@@ -185,6 +185,74 @@ class User(Model):
 #     )
 
 
+class Employee(Model):
+    """Local portal identity, independent of Frigate administrator accounts."""
+
+    id = CharField(primary_key=True, max_length=32)
+    name = CharField(null=True, max_length=50)
+    name_key = CharField(null=True, unique=True, max_length=100)
+    username = CharField(null=True, unique=True, max_length=100)
+    password_hash = CharField(null=True, max_length=120)
+    enabled = BooleanField(default=True)
+    auth_version = IntegerField(default=0)
+    face_name = CharField(null=True, unique=True, max_length=50)
+
+
+class EmployeeSource(Model):
+    """Stable controller records, including tombstones for deleted imports."""
+
+    id = CharField(primary_key=True, max_length=64)
+    controller_id = CharField(index=True, max_length=30)
+    user_id = CharField(max_length=100)
+    employee_id = CharField(null=True, index=True, max_length=32)
+    name = CharField(max_length=100)
+    active = BooleanField(default=True)
+    doors = JSONField(default=list)
+    suppressed = BooleanField(default=False)
+
+
+class EmployeeDoorOverride(Model):
+    """An explicit local replacement for imported controller permissions."""
+
+    employee_id = CharField(max_length=32)
+    controller_id = CharField(max_length=30)
+    doors = JSONField(default=list)
+
+    class Meta:
+        primary_key = CompositeKey("employee_id", "controller_id")
+
+
+class EmployeeAccessSettings(Model):
+    """Persisted cardless switch and generation used to invalidate attempts."""
+
+    id = IntegerField(primary_key=True, default=1)
+    enabled = BooleanField(default=False)
+    generation = IntegerField(default=0)
+
+
+class EmployeeAccessAttempt(Model):
+    """Durable command claim; snapshots and biometric data are never stored."""
+
+    id = CharField(primary_key=True, max_length=36)
+    employee_id = CharField(index=True, max_length=32)
+    camera = CharField(max_length=100)
+    controller_id = CharField(max_length=30)
+    door_id = CharField(max_length=100)
+    created_at = FloatField(index=True)
+    status = CharField(max_length=30, default="verifying")
+    score = FloatField(null=True)
+    result = JSONField(default=dict)
+
+
+class EmployeeControllerSync(Model):
+    """User enumeration availability, without retaining raw controller data."""
+
+    controller_id = CharField(primary_key=True, max_length=30)
+    checked_at = FloatField()
+    last_success = FloatField(null=True)
+    status = CharField(max_length=30)
+
+
 class AccessControl(Model):
     id = CharField(
         null=False,

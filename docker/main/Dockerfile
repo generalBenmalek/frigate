@@ -290,6 +290,7 @@ COPY --from=deps-rootfs / /
 RUN ldconfig
 
 EXPOSE 5000
+EXPOSE 8972
 EXPOSE 8554
 EXPOSE 8555/tcp 8555/udp
 

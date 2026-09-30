@@ -37,6 +37,7 @@ ipv6_config.setdefault("enabled", False)
 listen_config: dict[str, Any] = networking_config.get("listen", {})
 listen_config.setdefault("internal", 5000)
 listen_config.setdefault("external", 8971)
+listen_config.setdefault("employee", 8972)
 
 # handle case where internal port is a string with ip:port
 internal_port = listen_config["internal"]
@@ -49,6 +50,10 @@ external_port = listen_config["external"]
 if type(external_port) is str:
     external_port = int(external_port.split(":")[-1])
 listen_config["external_port"] = external_port
+employee_port = listen_config["employee"]
+if isinstance(employee_port, str):
+    employee_port = int(employee_port.split(":")[-1])
+listen_config["employee_port"] = employee_port
 
 base_path = os.environ.get("FRIGATE_BASE_PATH", "")
 

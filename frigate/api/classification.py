@@ -481,16 +481,19 @@ def deregister_faces(request: Request, name: str, body: DeleteFaceImagesBody):
     description="""Renames a face name in the system. The old name must exist and the new
     name must be valid. Returns a success message or an error if face recognition is not enabled.""",
 )
-def rename_face(request: Request, old_name: str, body: RenameFaceBody):
+async def rename_face(request: Request, old_name: str, body: RenameFaceBody):
     if not request.app.frigate_config.face_recognition.enabled:
         return JSONResponse(
             status_code=400,
             content={"message": "Face recognition is not enabled.", "success": False},
         )
 
-    context: EmbeddingsContext = request.app.embeddings
+    from frigate.api.employees import rename_employee_face, rename_face_library
+
     try:
-        context.rename_face(old_name, body.new_name)
+        linked = await rename_employee_face(request, old_name, body.new_name)
+        if not linked:
+            await rename_face_library(request, old_name, body.new_name)
         return JSONResponse(
             content={
                 "success": True,

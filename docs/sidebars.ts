@@ -116,6 +116,7 @@ const sidebars: SidebarsConfig = {
         label: "Extra Configuration",
         items: [
           "configuration/authentication",
+          "configuration/employee_access",
           "configuration/notifications",
           "configuration/profiles",
           "configuration/go2rtc",

@@ -32,6 +32,16 @@ class ListenConfig(FrigateBaseModel):
         title="External port",
         description="External listening port for Frigate (default 8971).",
     )
+    employee: int | str = Field(
+        default=8972,
+        title="Employee portal port",
+        description="Listening port for the isolated employee portal (default 8972). Restart required after changing this port.",
+    )
+
+    @property
+    def employee_port(self) -> int:
+        """Return the standalone employee website's listening port."""
+        return parse_listen_port(self.employee)
 
     @property
     def internal_port(self) -> int:
@@ -43,8 +53,8 @@ class ListenConfig(FrigateBaseModel):
 
     @model_validator(mode="after")
     def validate_distinct_ports(self) -> "ListenConfig":
-        if self.internal_port == self.external_port:
-            raise ValueError("internal and external must listen on different ports")
+        if len({self.internal_port, self.external_port, self.employee_port}) != 3:
+            raise ValueError("internal, external, and employee must listen on different ports")
 
         return self
 
@@ -58,5 +68,5 @@ class NetworkingConfig(FrigateBaseModel):
     listen: ListenConfig = Field(
         default_factory=ListenConfig,
         title="Listening ports configuration",
-        description="Configuration for internal and external listening ports. This is for advanced users. For the majority of use cases it's recommended to change the ports section of your Docker compose file.",
+        description="Configuration for internal, external, and employee portal listening ports. This is for advanced users. For the majority of use cases it's recommended to change the ports section of your Docker compose file.",
     )

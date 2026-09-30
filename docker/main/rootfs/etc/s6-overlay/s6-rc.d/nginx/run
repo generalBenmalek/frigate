@@ -89,6 +89,10 @@ python3 /usr/local/nginx/get_nginx_settings.py | \
     tempio -template /usr/local/nginx/templates/listen.gotmpl \
            -out /usr/local/nginx/conf/listen.conf
 
+python3 /usr/local/nginx/get_nginx_settings.py | \
+    tempio -template /usr/local/nginx/templates/employee_server.gotmpl \
+           -out /usr/local/nginx/conf/employee_server.conf
+
 # Replace the bash process with the NGINX process, redirecting stderr to stdout
 exec 2>&1
 exec \

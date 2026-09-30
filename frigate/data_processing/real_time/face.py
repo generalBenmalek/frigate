@@ -353,6 +353,8 @@ class FaceRealTimeProcessor(RealTimeProcessorApi):
     def handle_request(
         self, topic: str, request_data: dict[str, Any]
     ) -> dict[str, Any] | None:
+        if topic == EmbeddingsRequestEnum.verify_employee_face.value:
+            return self.verify_employee_face(request_data)
         if topic == EmbeddingsRequestEnum.clear_face_classifier.value:
             self.recognizer.clear()
             return {"success": True, "message": "Face classifier cleared."}
@@ -396,7 +398,15 @@ class FaceRealTimeProcessor(RealTimeProcessorApi):
 
                 # detect faces with lower confidence since we expect the face
                 # to be visible in uploaded images
-                face_box = self.__detect_face(img, 0.5)
+                if img is None:
+                    return {"success": False, "reason": "invalid_image"}
+                if request_data.get("single_face"):
+                    boxes = self.employee_face_boxes(img)
+                    if len(boxes) != 1:
+                        return {"success": False, "reason": "invalid_face_count"}
+                    face_box = boxes[0]
+                else:
+                    face_box = self.__detect_face(img, 0.5)
 
                 if not face_box:
                     return {
@@ -405,9 +415,11 @@ class FaceRealTimeProcessor(RealTimeProcessorApi):
                     }
 
                 face = img[face_box[1] : face_box[3], face_box[0] : face_box[2]]
-                _, thumbnail = cv2.imencode(
+                encoded, thumbnail = cv2.imencode(
                     ".webp", face, [int(cv2.IMWRITE_WEBP_QUALITY), 100]
                 )
+                if not encoded:
+                    return {"success": False, "reason": "invalid_image"}
 
             # write face to library
             sanitized_label = sanitize_path_component(label)
@@ -546,6 +558,64 @@ class FaceRealTimeProcessor(RealTimeProcessorApi):
         weighted_average = weighted_scores[best_name] / total_weights[best_name]
 
         return best_name, weighted_average
+
+    def employee_face_boxes(self, image: np.ndarray) -> list[tuple[int, int, int, int]]:
+        """Detect all valid faces for enrollment and employee verification."""
+        if self.face_detector is None:
+            return []
+        scale = min(1.0, MAX_DETECTION_HEIGHT / image.shape[0])
+        resized = cv2.resize(image, (int(image.shape[1] * scale), int(image.shape[0] * scale)))
+        self.face_detector.setInputSize((resized.shape[1], resized.shape[0]))
+        _, faces = self.face_detector.detect(resized)
+        if faces is None:
+            return []
+        boxes = []
+        for face in faces:
+            if face[-1] < self.face_config.detection_threshold:
+                continue
+            x, y, width, height = face[:4] / scale
+            box = (
+                max(0, int(x)), max(0, int(y)),
+                min(image.shape[1], int(x + width)),
+                min(image.shape[0], int(y + height)),
+            )
+            if box[2] > box[0] and box[3] > box[1]:
+                boxes.append(box)
+        return boxes
+
+    def verify_employee_face(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Verify a server-selected identity without classifying other people."""
+        camera = self.config.cameras.get(data["camera"])
+        if not self.face_config.enabled or camera is None or not camera.face_recognition.enabled:
+            return {"success": False, "reason": "recognition_unavailable"}
+        if self.face_detector is None:
+            return {"success": False, "reason": "recognition_unavailable"}
+        image = cv2.imdecode(
+            np.frombuffer(base64.b64decode(data["image"]), dtype=np.uint8), cv2.IMREAD_COLOR
+        )
+        if image is None:
+            return {"success": False, "reason": "snapshot_failed"}
+        boxes = self.employee_face_boxes(image)
+        if not boxes:
+            return {"success": False, "reason": "face_not_detected", "retry": True}
+        if len(boxes) != 1:
+            return {"success": False, "reason": "multiple_faces"}
+        x1, y1, x2, y2 = boxes[0]
+        crop = image[y1:y2, x1:x2]
+        if (x2 - x1) * (y2 - y1) < camera.face_recognition.min_area:
+            return {"success": False, "reason": "face_not_detected", "retry": True}
+        if self.face_config.blur_confidence_filter and cv2.Laplacian(crop, cv2.CV_64F).var() < 120:
+            return {"success": False, "reason": "face_not_detected", "retry": True}
+        try:
+            score = self.recognizer.verify_identity(crop, data["face_name"], data["enrollment_signature"])
+        except (cv2.error, ValueError, IndexError, OSError):
+            logger.warning("Unable to align an employee face")
+            return {"success": False, "reason": "face_not_detected", "retry": True}
+        if score is None:
+            return {"success": False, "reason": "recognition_unavailable"}
+        if not np.isfinite(score) or score < self.face_config.recognition_threshold:
+            return {"success": False, "reason": "identity_not_verified", "score": score if np.isfinite(score) else None}
+        return {"success": True, "score": score}
 
     def write_face_attempt(
         self,

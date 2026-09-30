@@ -24,6 +24,8 @@ from frigate.api import (
     classification,
     debug_replay,
     event,
+    employees,
+    employee_portal,
     export,
     media,
     motion_search,
@@ -44,6 +46,7 @@ from frigate.config.holder import ConfigHolder
 from frigate.config.profile_manager import ProfileManager
 from frigate.debug_replay import DebugReplayManager, debug_replay_auto_stop_watchdog
 from frigate.embeddings import EmbeddingsContext
+from frigate.employee_service import EmployeeAccessError, EmployeeService
 from frigate.genai import GenAIClientManager
 from frigate.ptz.onvif import OnvifController
 from frigate.stats.emitter import StatsEmitter
@@ -81,6 +84,8 @@ def create_fastapi_app(
     profile_manager: ProfileManager | None = None,
     enforce_default_admin: bool = True,
     config_holder: ConfigHolder | None = None,
+    employee_detection_queue=None,
+    employee_stop_event=None,
 ):
     logger.info("Starting FastAPI app")
     app = FastAPI(
@@ -134,6 +139,8 @@ def create_fastapi_app(
     @app.on_event("startup")
     async def startup():
         logger.info("FastAPI started")
+        await app.employee_service.start()
+        app.state.employee_sync_task = asyncio.create_task(app.employee_service.poll())
         app.state.access_controller_task = asyncio.create_task(
             run_controller_polling(
                 dispatcher.publish_websocket if dispatcher else None,
@@ -148,6 +155,12 @@ def create_fastapi_app(
 
     @app.on_event("shutdown")
     async def stop_access_controller_polling():
+        employee_task = getattr(app.state, "employee_sync_task", None)
+        if employee_task is not None:
+            employee_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await employee_task
+        await app.employee_service.stop()
         task = getattr(app.state, "access_controller_task", None)
         if task is not None:
             task.cancel()
@@ -171,6 +184,8 @@ def create_fastapi_app(
     app.include_router(chat.router)
     app.include_router(classification.router)
     app.include_router(access_controller.router)
+    app.include_router(employees.router)
+    app.add_exception_handler(EmployeeAccessError, employee_portal.employee_error)
     app.include_router(review.router)
     app.include_router(main_app.router)
     app.include_router(preview.router)
@@ -220,6 +235,8 @@ def create_fastapi_app(
     else:
         app.jwt_token = None
 
+    app.employee_service = EmployeeService(app, employee_detection_queue, employee_stop_event)
+    app.mount("/employee", employee_portal.create_employee_app(app.employee_service, get_jwt_secret()))
     return app
 
 

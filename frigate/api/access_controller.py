@@ -6,7 +6,7 @@ import time
 from datetime import datetime, tzinfo
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 
 from frigate.access_controller_service import (
@@ -97,7 +97,7 @@ def get_access_controllers():
     "/access-controllers",
     dependencies=[Depends(require_role(["admin"]))],
 )
-def create_access_controller(body: AccessControllerBody):
+def create_access_controller(request: Request, body: AccessControllerBody):
     """Save a Dahua controller and try its connection."""
     _ensure_access_control_table()
     device_id = str(body.id or "").strip()
@@ -146,6 +146,7 @@ def create_access_controller(body: AccessControllerBody):
     )
 
     probe_device(device)
+    request.app.employee_service.request_sync()
     return JSONResponse(content=_serialize_access_controller(device))
 
 
@@ -153,7 +154,7 @@ def create_access_controller(body: AccessControllerBody):
     "/access-controllers/{device_id}",
     dependencies=[Depends(require_role(["admin"]))],
 )
-def update_access_controller(device_id: str, body: AccessControllerUpdateBody):
+def update_access_controller(request: Request, device_id: str, body: AccessControllerUpdateBody):
     """Update a controller and refresh its connection result."""
     _ensure_access_control_table()
     device = AccessControl.get_or_none(AccessControl.id == device_id)
@@ -199,6 +200,7 @@ def update_access_controller(device_id: str, body: AccessControllerUpdateBody):
 
     device.save()
     probe_device(device)
+    request.app.employee_service.request_sync()
     return JSONResponse(content=_serialize_access_controller(device))
 
 
