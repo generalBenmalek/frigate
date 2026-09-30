@@ -59,6 +59,9 @@ class Timeline(Model):
     class_type = CharField(max_length=50)  # ex: entered_zone, audio_heard
     data = JSONField()  # ex: tracked object id, region, box, etc.
 
+    class Meta:
+        primary_key = False
+
 
 class Regions(Model):
     camera = CharField(null=False, primary_key=True, max_length=20)
