@@ -366,13 +366,12 @@ def get_access_controller_events(
     events = []
     for event in query.order_by(AccessEvent.occurred_at.desc(), AccessEvent.id).iterator():
         serialized = serialize_access_event(event, names.get(event.device_id))
-        if serialized["event_code"] in {"DoorStatus", "DoorCard", "KeepLightOn", "DoorOpen", "DoorClose"}:
-            continue
-        if any(value and value.strip().casefold() not in str(serialized.get(key) if serialized.get(key) is not None else "").casefold()
-               for value, key in ((name, "user_name"), (user_id, "user_id"), (card_no, "card_number"))):
-            continue
-        if status and serialized["status"] != status:
-            continue
+        # is_door_event = serialized["event_code"] in {"DoorStatus", "DoorCard", "KeepLightOn", "DoorOpen", "DoorClose"}
+        # if not is_door_event and any(value and value.strip().casefold() not in str(serialized.get(key) if serialized.get(key) is not None else "").casefold()
+        #        for value, key in ((name, "user_name"), (user_id, "user_id"), (card_no, "card_number"))):
+        #     continue
+        # if status and serialized["status"] != status:
+        #     continue
         events.append(serialized)
         if len(events) >= count:
             break
@@ -623,3 +622,4 @@ def get_access_controller_snapshot(device_id: str):
         return Response(content=image, media_type="image/jpeg")
     except DahuaOperationError as err:
         return _provider_error(err)
+

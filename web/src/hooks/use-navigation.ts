@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { isDesktop } from "react-device-detect";
 import { FaCompactDisc, FaVideo } from "react-icons/fa";
 import { IoSearch } from "react-icons/io5";
-import { LuConstruction, LuUserCog } from "react-icons/lu";
+import { LuConstruction, LuUserCog, LuUsers  } from "react-icons/lu";
 import { MdCategory, MdChat, MdVideoLibrary } from "react-icons/md";
 import { TbFaceId } from "react-icons/tb";
 import useSWR from "swr";
@@ -112,7 +112,7 @@ export default function useNavigation(
         {
           id: ID_EMPLOYEES,
           variant,
-          icon: LuUserCog,
+          icon: LuUsers ,
           title: "menu.employees",
           url: "/employees",
           enabled: isAdmin,
