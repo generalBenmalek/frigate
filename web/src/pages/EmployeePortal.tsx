@@ -29,6 +29,20 @@ async function portalRequest<T>(path: string, csrf?: string, body?: unknown): Pr
   return data as T;
 }
 
+/* ---------- Shared field styling (light theme) ---------- */
+const inputClass =
+  "h-10 border-slate-300 bg-white text-slate-900 placeholder:text-slate-400 " +
+  "focus-visible:border-[#088141] focus-visible:ring-2 focus-visible:ring-[#088141]/20";
+
+const triggerClass =
+  "h-10 w-full border-slate-300 bg-white text-slate-900 data-[placeholder]:text-slate-400 " +
+  "focus:ring-2 focus:ring-[#088141]/20 focus:border-[#088141] disabled:bg-slate-50 disabled:text-slate-400";
+
+const primaryButtonClass =
+  "w-full bg-gradient-to-r from-[#088141] to-[#0aa356] font-semibold text-white shadow-sm " +
+  "hover:from-[#066d3a] hover:to-[#088141] focus-visible:ring-2 focus-visible:ring-[#088141]/30 " +
+  "disabled:opacity-50 disabled:shadow-none";
+
 export default function EmployeePortal() {
   const { t } = useTranslation("views/employeePortal");
   const [session, setSession] = useState<EmployeeSession>();
@@ -144,166 +158,220 @@ export default function EmployeePortal() {
   const available = session?.enabled && session?.has_face;
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-gray-50 p-4">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-slate-50 via-white to-slate-100 p-4">
       <section className="w-full max-w-md space-y-8">
-        <div className="flex flex-col items-center justify-center space-y-4 pt-4">
-          <img src="/images/algerie-telecom-seeklogo.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
-          <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-bold text-[#1F2359]">{t("title")}</h1>
-            <p className="text-sm text-blue-900">Employee Access Portal</p>
+        {/* ---------- Brand header ---------- */}
+        <header className="flex flex-col items-center space-y-4 pt-4 text-center">
+          <img
+            src="/images/algerie-telecom-seeklogo.png"
+            alt="Algérie Telecom"
+            className="h-16 w-auto drop-shadow-sm"
+          />
+          <div className="space-y-1">
+            <h1 className="text-3xl font-bold tracking-tight text-[#1F2359]">{t("title")}</h1>
+            <p className="text-sm font-medium text-slate-500">Employee Access Portal</p>
           </div>
-        </div>
+        </header>
 
-        <div className="space-y-6 rounded-xl border border-[#088141]/30 bg-blue-50/80 p-8 shadow-2xl backdrop-blur-sm">
-          {!session && <div className="flex items-center justify-center space-x-2 py-8">
-            <Loader className="h-5 w-5 animate-spin text-[#088141]" />
-            <p className="text-white/70">{t("loading")}</p>
-          </div>}
-          
-          {error && <div role="alert" className="flex items-start gap-3 rounded-lg bg-red-500/20 p-4 text-red-100 border border-red-500/30">
-            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
-            <p>{t(`errors.${error}`, { defaultValue: t("errors.verification_failed") })}</p>
-          </div>}
-          
+        {/* ---------- Card ---------- */}
+        <div className="space-y-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-xl shadow-slate-900/5 sm:p-8">
+          {/* Session loading */}
+          {!session && (
+            <div className="flex items-center justify-center gap-3 py-10">
+              <Loader className="h-5 w-5 animate-spin text-[#088141]" />
+              <p className="text-sm text-slate-500">{t("loading")}</p>
+            </div>
+          )}
+
+          {/* Global error */}
+          {error && (
+            <div
+              role="alert"
+              className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700"
+            >
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
+              <p>{t(`errors.${error}`, { defaultValue: t("errors.verification_failed") })}</p>
+            </div>
+          )}
+
+          {/* ---------- Login ---------- */}
           {session && !session.authenticated && (
-            <form onSubmit={login} className="space-y-4">
+            <form onSubmit={login} className="space-y-5">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-[#1F2359]">{t("username")}</Label>
-                <Input 
-                  id="username" 
-                  autoComplete="username" 
-                  value={username} 
-                  onChange={(event) => setUsername(event.target.value)} 
-                  required 
-                  disabled={busy} 
+                <Label htmlFor="username" className="text-sm font-medium text-slate-700">
+                  {t("username")}
+                </Label>
+                <Input
+                  id="username"
+                  autoComplete="username"
+                  value={username}
+                  onChange={(event) => setUsername(event.target.value)}
+                  required
+                  disabled={busy}
                   maxLength={64}
-                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white focus:border-[#088141] focus:ring-[#088141]/50" 
+                  className={inputClass}
                 />
               </div>
+
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-[#1F2359]">{t("password")}</Label>
-                <Input 
-                  id="password" 
-                  type="password" 
-                  autoComplete="current-password" 
-                  value={password} 
-                  onChange={(event) => setPassword(event.target.value)} 
-                  required 
-                  disabled={busy} 
+                <Label htmlFor="password" className="text-sm font-medium text-slate-700">
+                  {t("password")}
+                </Label>
+                <Input
+                  id="password"
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                  disabled={busy}
                   maxLength={1024}
-                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white focus:border-[#088141] focus:ring-[#088141]/50"
+                  className={inputClass}
                 />
               </div>
-              <Button 
-                type="submit" 
-                className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2" 
-                disabled={busy}
-              >
-                {busy ? `${t("signingIn")}...` : t("login")}
+
+              <Button type="submit" className={primaryButtonClass} disabled={busy}>
+                {busy ? `${t("signingIn")}…` : t("login")}
               </Button>
             </form>
           )}
 
+          {/* ---------- Authenticated ---------- */}
           {session?.authenticated && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#1F2359]/15">
-                <p className="text-lg font-semibold text-[#1F2359]">{t("welcome", { name: session.name })}</p>
-                <Button 
-                  variant="ghost" 
+              <div className="flex items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                <p className="truncate text-lg font-semibold text-[#1F2359]">
+                  {t("welcome", { name: session.name })}
+                </p>
+                <Button
+                  variant="ghost"
                   size="sm"
-                  onClick={() => void logout()} 
+                  onClick={() => void logout()}
                   disabled={busy}
-                  className="text-red-300 hover:text-red-100 hover:bg-red-500/20"
+                  className="shrink-0 text-slate-500 hover:bg-red-50 hover:text-red-600"
                 >
-                  <LogOut className="h-4 w-4 mr-2" />
+                  <LogOut className="mr-2 h-4 w-4" />
                   {t("logout")}
                 </Button>
               </div>
 
-              {!session.enabled && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100 border border-yellow-500/30">
-                <p>{t("errors.system_disabled")}</p>
-              </div>}
-              {!session.has_face && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100 border border-yellow-500/30">
-                <p>{t("errors.no_registered_face")}</p>
-              </div>}
+              {!session.enabled && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <p>{t("errors.system_disabled")}</p>
+                </div>
+              )}
+              {!session.has_face && (
+                <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                  <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <p>{t("errors.no_registered_face")}</p>
+                </div>
+              )}
 
-              <Button 
-                className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2 flex items-center justify-center gap-2" 
-                disabled={!available || busy || selecting} 
+              <Button
+                className={`${primaryButtonClass} flex items-center justify-center gap-2`}
+                disabled={!available || busy || selecting}
                 onClick={() => { setSelecting(true); setResult(undefined); setError(""); }}
               >
                 <Lock className="h-5 w-5" />
                 {t("forgotCard")}
               </Button>
 
+              {/* ---------- Verification form ---------- */}
               {selecting && available && (
-                <form onSubmit={verify} className="space-y-6 border-t border-[#1F2359]/15 pt-6">
-                  <div className="space-y-2">
-                    <p className="text-sm font-semibold text-blue-900">{t("instructions")}</p>
-                  </div>
+                <form onSubmit={verify} className="space-y-6 border-t border-slate-200 pt-6">
+                  <p className="text-sm font-semibold text-[#1F2359]">{t("instructions")}</p>
 
-                  {optionsLoading && <div className="flex items-center justify-center space-x-2 py-4">
-                    <Loader className="h-4 w-4 animate-spin text-[#088141]" />
-                    <p className="text-white/70 text-sm">{t("loading")}</p>
-                  </div>}
+                  {optionsLoading && (
+                    <div className="flex items-center justify-center gap-3 py-4">
+                      <Loader className="h-4 w-4 animate-spin text-[#088141]" />
+                      <p className="text-sm text-slate-500">{t("loading")}</p>
+                    </div>
+                  )}
 
-                  {!optionsLoading && options.length === 0 && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100">
-                    <p className="text-sm">{t("noDoors")}</p>
-                  </div>}
+                  {!optionsLoading && options.length === 0 && (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+                      {t("noDoors")}
+                    </div>
+                  )}
 
                   {!optionsLoading && options.length > 0 && (
                     <>
                       <div className="space-y-2">
-                        <Label className="text-white font-medium flex items-center gap-2">
+                        <Label className="flex items-center gap-2 text-sm font-medium text-slate-700">
                           <Camera className="h-4 w-4 text-[#088141]" />
                           {t("camera")}
                         </Label>
-                        <Select value={camera} onValueChange={(value) => { setCamera(value); setController(""); setDoor(""); setResult(undefined); }} disabled={busy}>
-                          <SelectTrigger aria-label={t("camera")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
+                        <Select
+                          value={camera}
+                          onValueChange={(value) => { setCamera(value); setController(""); setDoor(""); setResult(undefined); }}
+                          disabled={busy}
+                        >
+                          <SelectTrigger aria-label={t("camera")} className={triggerClass}>
                             <SelectValue placeholder={t("selectCamera")} />
                           </SelectTrigger>
-                          <SelectContent>{cameras.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
+                          <SelectContent>
+                            {cameras.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
+                          </SelectContent>
                         </Select>
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-white font-medium">{t("controller")}</Label>
-                        <Select value={controller} onValueChange={(value) => { setController(value); setDoor(""); setResult(undefined); }} disabled={busy || !camera}>
-                          <SelectTrigger aria-label={t("controller")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
+                        <Label className="text-sm font-medium text-slate-700">{t("controller")}</Label>
+                        <Select
+                          value={controller}
+                          onValueChange={(value) => { setController(value); setDoor(""); setResult(undefined); }}
+                          disabled={busy || !camera}
+                        >
+                          <SelectTrigger aria-label={t("controller")} className={triggerClass}>
                             <SelectValue placeholder={t("selectController")} />
                           </SelectTrigger>
-                          <SelectContent>{controllers.map((option) => <SelectItem key={option.controller_id} value={option.controller_id}>{option.controller_name}</SelectItem>)}</SelectContent>
+                          <SelectContent>
+                            {controllers.map((option) => (
+                              <SelectItem key={option.controller_id} value={option.controller_id}>
+                                {option.controller_name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
                         </Select>
                       </div>
 
                       <div className="space-y-2">
-                        <Label className="text-white font-medium">{t("door")}</Label>
-                        <Select value={door} onValueChange={(value) => { setDoor(value); setResult(undefined); }} disabled={busy || !controller}>
-                          <SelectTrigger aria-label={t("door")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
+                        <Label className="text-sm font-medium text-slate-700">{t("door")}</Label>
+                        <Select
+                          value={door}
+                          onValueChange={(value) => { setDoor(value); setResult(undefined); }}
+                          disabled={busy || !controller}
+                        >
+                          <SelectTrigger aria-label={t("door")} className={triggerClass}>
                             <SelectValue placeholder={t("selectDoor")} />
                           </SelectTrigger>
-                          <SelectContent>{doors.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
+                          <SelectContent>
+                            {doors.map((option) => (
+                              <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>
+                            ))}
+                          </SelectContent>
                         </Select>
                       </div>
 
                       {camera && (
-                        <div className="space-y-3 rounded-lg bg-[#088141]/10 p-4 border border-[#1F2359]/20">
+                        <div className="space-y-3 rounded-xl border border-[#088141]/20 bg-[#088141]/5 p-4">
                           <div className="flex items-start gap-3">
-                            <Camera className="h-5 w-5 text-[#088141] mt-0.5 flex-shrink-0 animate-pulse" />
-                            <p className="text-sm text-[#1F2359]">{t("faceCamera", { camera })}</p>
+                            <Camera className="mt-0.5 h-5 w-5 shrink-0 animate-pulse text-[#088141]" />
+                            <p className="text-sm text-slate-700">{t("faceCamera", { camera })}</p>
                           </div>
-                          <div className="flex items-center justify-center h-24 bg-white/5 rounded border border-[#1F2359]/15">
-                            <div className="text-center space-y-2">
-                              <Camera className="h-8 w-8 text-[#088141] mx-auto animate-bounce" />
-                              <p className="text-xs text-blue-900">Face the camera directly</p>
+                          <div className="flex h-24 items-center justify-center rounded-lg border border-dashed border-[#088141]/30 bg-white">
+                            <div className="space-y-2 text-center">
+                              <Camera className="mx-auto h-8 w-8 animate-bounce text-[#088141]" />
+                              <p className="text-xs text-slate-400">Face the camera directly</p>
                             </div>
                           </div>
                         </div>
                       )}
 
-                      <Button 
-                        type="submit" 
-                        className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2" 
+                      <Button
+                        type="submit"
+                        className={primaryButtonClass}
                         disabled={busy || !doors.some((option) => option.id === door)}
                       >
                         {t("verify")}
@@ -313,46 +381,64 @@ export default function EmployeePortal() {
                 </form>
               )}
 
+              {/* ---------- Verifying progress ---------- */}
               {verifying && (
-                <div className="space-y-3 rounded-lg bg-[#088141]/10 p-4 border border-[#1F2359]/20">
+                <div className="space-y-3 rounded-xl border border-[#088141]/20 bg-[#088141]/5 p-4">
                   <div className="flex items-center justify-center gap-2">
                     <Loader className="h-5 w-5 animate-spin text-[#088141]" />
-                    <p className="text-white font-semibold">{countdown > 0 ? t("verifying", { seconds: countdown }) : t("finalizing")}</p>
+                    <p className="font-semibold text-[#1F2359]">
+                      {countdown > 0 ? t("verifying", { seconds: countdown }) : t("finalizing")}
+                    </p>
                   </div>
-                  <div className="h-1 bg-blue-400/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-[#088141] to-[#06a856] animate-pulse" style={{ width: `${Math.max(0, countdown * 10)}%` }} />
+                  <div className="h-1 overflow-hidden rounded-full bg-slate-200">
+                    <div
+                      className="h-full bg-gradient-to-r from-[#088141] to-[#0aa356] transition-[width] duration-200 ease-linear"
+                      style={{ width: `${Math.max(0, countdown * 10)}%` }}
+                    />
                   </div>
                 </div>
               )}
 
+              {/* ---------- Result ---------- */}
               {result && (
-                <div role={result.success ? "status" : "alert"} className={`space-y-3 rounded-lg p-4 border ${result.success ? 'bg-green-500/20 border-green-400/30' : 'bg-red-500/20 border-red-400/30'}`}>
+                <div
+                  role={result.success ? "status" : "alert"}
+                  className={`space-y-3 rounded-xl border p-4 ${
+                    result.success
+                      ? "border-emerald-200 bg-emerald-50"
+                      : "border-red-200 bg-red-50"
+                  }`}
+                >
                   <div className="flex items-start gap-3">
                     {result.success ? (
-                      <CheckCircle className="h-5 w-5 text-green-300 mt-0.5 flex-shrink-0" />
+                      <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
                     ) : (
-                      <AlertCircle className="h-5 w-5 text-red-300 mt-0.5 flex-shrink-0" />
+                      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-500" />
                     )}
-                    <div className={result.success ? "text-green-100" : "text-red-100"}>
-                      {result.success ? (
-                        <div className="space-y-1">
-                          <p className="font-semibold">{t("verified")}</p>
-                          <p className="text-sm">{t("continue")}</p>
-                          <p className="text-sm font-semibold text-green-200">{t("unlockRequested")}</p>
-                        </div>
-                      ) : (
-                        <div className="space-y-1">
-                          {result.identity_verified && <p className="text-sm text-yellow-200">{t("verified")}</p>}
-                          <p className="font-semibold">{t(`errors.${result.reason}`, { defaultValue: t("errors.verification_failed") })}</p>
-                        </div>
-                      )}
-                    </div>
+
+                    {result.success ? (
+                      <div className="space-y-1 text-sm text-emerald-800">
+                        <p className="font-semibold">{t("verified")}</p>
+                        <p>{t("continue")}</p>
+                        <p className="font-semibold text-emerald-700">{t("unlockRequested")}</p>
+                      </div>
+                    ) : (
+                      <div className="space-y-1 text-sm text-red-700">
+                        {result.identity_verified && (
+                          <p className="text-amber-700">{t("verified")}</p>
+                        )}
+                        <p className="font-semibold">
+                          {t(`errors.${result.reason}`, { defaultValue: t("errors.verification_failed") })}
+                        </p>
+                      </div>
+                    )}
                   </div>
+
                   {!result.success && (
-                    <Button 
-                      onClick={() => { setResult(undefined); setError(""); setSelecting(true); }}
-                      className="w-full bg-blue-50/80 hover:bg-white/20 text-white border border-white/20"
+                    <Button
                       variant="outline"
+                      onClick={() => { setResult(undefined); setError(""); setSelecting(true); }}
+                      className="w-full border-slate-300 text-slate-700 hover:bg-slate-50 hover:text-slate-900"
                     >
                       {t("verify")}
                     </Button>
@@ -360,12 +446,13 @@ export default function EmployeePortal() {
                 </div>
               )}
 
+              {/* ---------- Cancel ---------- */}
               {selecting && (
-                <Button 
-                  onClick={() => { setSelecting(false); setResult(undefined); setError(""); }}
+                <Button
                   variant="outline"
-                  className="w-full text-white border-[#1F2359]/20 hover:bg-[#088141]/10"
+                  onClick={() => { setSelecting(false); setResult(undefined); setError(""); }}
                   disabled={busy}
+                  className="w-full border-slate-300 text-slate-600 hover:bg-slate-50 hover:text-slate-900"
                 >
                   Cancel
                 </Button>
@@ -374,12 +461,11 @@ export default function EmployeePortal() {
           )}
         </div>
 
-        <div className="text-center text-xs text-blue-800/60 pb-4">
-          <p>Secured Access Portal � 2026</p>
-        </div>
+        {/* ---------- Footer ---------- */}
+        <footer className="pb-4 text-center text-xs text-slate-400">
+          <p>Secured Access Portal © 2026</p>
+        </footer>
       </section>
     </main>
   );
 }
-
-
