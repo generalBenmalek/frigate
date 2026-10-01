@@ -144,19 +144,19 @@ export default function EmployeePortal() {
   const available = session?.enabled && session?.has_face;
 
   return (
-    <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-[#003d82] to-[#0a2855] p-4">
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-gray-50 p-4">
       <section className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center justify-center space-y-4 pt-4">
-          <img src="/images/algerie-telecom-seeklogo.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
+          <img src="/images/algerie-telecom-seeklogo-maskable.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
           <div className="space-y-2 text-center">
-            <h1 className="text-3xl font-bold text-white">{t("title")}</h1>
-            <p className="text-sm text-blue-100">Employee Access Portal</p>
+            <h1 className="text-3xl font-bold text-[#1F2359]">{t("title")}</h1>
+            <p className="text-sm text-blue-900">Employee Access Portal</p>
           </div>
         </div>
 
-        <div className="space-y-6 rounded-xl border border-[#ff6b00]/30 bg-white/10 p-8 shadow-2xl backdrop-blur-sm">
+        <div className="space-y-6 rounded-xl border border-[#088141]/30 bg-blue-50/80 p-8 shadow-2xl backdrop-blur-sm">
           {!session && <div className="flex items-center justify-center space-x-2 py-8">
-            <Loader className="h-5 w-5 animate-spin text-[#ff6b00]" />
+            <Loader className="h-5 w-5 animate-spin text-[#088141]" />
             <p className="text-white/70">{t("loading")}</p>
           </div>}
           
@@ -168,7 +168,7 @@ export default function EmployeePortal() {
           {session && !session.authenticated && (
             <form onSubmit={login} className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="username" className="text-white">{t("username")}</Label>
+                <Label htmlFor="username" className="text-[#1F2359]">{t("username")}</Label>
                 <Input 
                   id="username" 
                   autoComplete="username" 
@@ -177,11 +177,11 @@ export default function EmployeePortal() {
                   required 
                   disabled={busy} 
                   maxLength={64}
-                  className="bg-white/10 border-blue-400/30 text-white placeholder-white/50 focus:border-[#ff6b00] focus:ring-[#ff6b00]/50" 
+                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white/50 focus:border-[#088141] focus:ring-[#088141]/50" 
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="password" className="text-white">{t("password")}</Label>
+                <Label htmlFor="password" className="text-[#1F2359]">{t("password")}</Label>
                 <Input 
                   id="password" 
                   type="password" 
@@ -191,12 +191,12 @@ export default function EmployeePortal() {
                   required 
                   disabled={busy} 
                   maxLength={1024}
-                  className="bg-white/10 border-blue-400/30 text-white placeholder-white/50 focus:border-[#ff6b00] focus:ring-[#ff6b00]/50"
+                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white/50 focus:border-[#088141] focus:ring-[#088141]/50"
                 />
               </div>
               <Button 
                 type="submit" 
-                className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2" 
+                className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2" 
                 disabled={busy}
               >
                 {busy ? `${t("signingIn")}...` : t("login")}
@@ -206,8 +206,8 @@ export default function EmployeePortal() {
 
           {session?.authenticated && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between gap-4 pb-4 border-b border-blue-400/20">
-                <p className="text-lg font-semibold text-white">{t("welcome", { name: session.name })}</p>
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-[#1F2359]/15">
+                <p className="text-lg font-semibold text-[#1F2359]">{t("welcome", { name: session.name })}</p>
                 <Button 
                   variant="ghost" 
                   size="sm"
@@ -228,7 +228,7 @@ export default function EmployeePortal() {
               </div>}
 
               <Button 
-                className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2 flex items-center justify-center gap-2" 
+                className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2 flex items-center justify-center gap-2" 
                 disabled={!available || busy || selecting} 
                 onClick={() => { setSelecting(true); setResult(undefined); setError(""); }}
               >
@@ -237,13 +237,13 @@ export default function EmployeePortal() {
               </Button>
 
               {selecting && available && (
-                <form onSubmit={verify} className="space-y-6 border-t border-blue-400/20 pt-6">
+                <form onSubmit={verify} className="space-y-6 border-t border-[#1F2359]/15 pt-6">
                   <div className="space-y-2">
-                    <p className="text-sm font-semibold text-blue-100">{t("instructions")}</p>
+                    <p className="text-sm font-semibold text-blue-900">{t("instructions")}</p>
                   </div>
 
                   {optionsLoading && <div className="flex items-center justify-center space-x-2 py-4">
-                    <Loader className="h-4 w-4 animate-spin text-[#ff6b00]" />
+                    <Loader className="h-4 w-4 animate-spin text-[#088141]" />
                     <p className="text-white/70 text-sm">{t("loading")}</p>
                   </div>}
 
@@ -255,11 +255,11 @@ export default function EmployeePortal() {
                     <>
                       <div className="space-y-2">
                         <Label className="text-white font-medium flex items-center gap-2">
-                          <Camera className="h-4 w-4 text-[#ff6b00]" />
+                          <Camera className="h-4 w-4 text-[#088141]" />
                           {t("camera")}
                         </Label>
                         <Select value={camera} onValueChange={(value) => { setCamera(value); setController(""); setDoor(""); setResult(undefined); }} disabled={busy}>
-                          <SelectTrigger aria-label={t("camera")} className="bg-white/10 border-blue-400/30 text-white">
+                          <SelectTrigger aria-label={t("camera")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
                             <SelectValue placeholder={t("selectCamera")} />
                           </SelectTrigger>
                           <SelectContent>{cameras.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
@@ -269,7 +269,7 @@ export default function EmployeePortal() {
                       <div className="space-y-2">
                         <Label className="text-white font-medium">{t("controller")}</Label>
                         <Select value={controller} onValueChange={(value) => { setController(value); setDoor(""); setResult(undefined); }} disabled={busy || !camera}>
-                          <SelectTrigger aria-label={t("controller")} className="bg-white/10 border-blue-400/30 text-white">
+                          <SelectTrigger aria-label={t("controller")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
                             <SelectValue placeholder={t("selectController")} />
                           </SelectTrigger>
                           <SelectContent>{controllers.map((option) => <SelectItem key={option.controller_id} value={option.controller_id}>{option.controller_name}</SelectItem>)}</SelectContent>
@@ -279,7 +279,7 @@ export default function EmployeePortal() {
                       <div className="space-y-2">
                         <Label className="text-white font-medium">{t("door")}</Label>
                         <Select value={door} onValueChange={(value) => { setDoor(value); setResult(undefined); }} disabled={busy || !controller}>
-                          <SelectTrigger aria-label={t("door")} className="bg-white/10 border-blue-400/30 text-white">
+                          <SelectTrigger aria-label={t("door")} className="bg-blue-50/80 border-[#1F2359]/20 text-[#1F2359]">
                             <SelectValue placeholder={t("selectDoor")} />
                           </SelectTrigger>
                           <SelectContent>{doors.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
@@ -287,15 +287,15 @@ export default function EmployeePortal() {
                       </div>
 
                       {camera && (
-                        <div className="space-y-3 rounded-lg bg-blue-500/10 p-4 border border-blue-400/30">
+                        <div className="space-y-3 rounded-lg bg-[#088141]/10 p-4 border border-[#1F2359]/20">
                           <div className="flex items-start gap-3">
-                            <Camera className="h-5 w-5 text-[#ff6b00] mt-0.5 flex-shrink-0 animate-pulse" />
-                            <p className="text-sm text-white">{t("faceCamera", { camera })}</p>
+                            <Camera className="h-5 w-5 text-[#088141] mt-0.5 flex-shrink-0 animate-pulse" />
+                            <p className="text-sm text-[#1F2359]">{t("faceCamera", { camera })}</p>
                           </div>
-                          <div className="flex items-center justify-center h-24 bg-white/5 rounded border border-blue-400/20">
+                          <div className="flex items-center justify-center h-24 bg-white/5 rounded border border-[#1F2359]/15">
                             <div className="text-center space-y-2">
-                              <Camera className="h-8 w-8 text-[#ff6b00] mx-auto animate-bounce" />
-                              <p className="text-xs text-blue-100">Face the camera directly</p>
+                              <Camera className="h-8 w-8 text-[#088141] mx-auto animate-bounce" />
+                              <p className="text-xs text-blue-900">Face the camera directly</p>
                             </div>
                           </div>
                         </div>
@@ -303,7 +303,7 @@ export default function EmployeePortal() {
 
                       <Button 
                         type="submit" 
-                        className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2" 
+                        className="w-full bg-gradient-to-r from-[#088141] to-[#06a856] hover:from-[#066d3a] hover:to-[#077a42] text-white font-semibold py-2" 
                         disabled={busy || !doors.some((option) => option.id === door)}
                       >
                         {t("verify")}
@@ -314,13 +314,13 @@ export default function EmployeePortal() {
               )}
 
               {verifying && (
-                <div className="space-y-3 rounded-lg bg-blue-500/10 p-4 border border-blue-400/30">
+                <div className="space-y-3 rounded-lg bg-[#088141]/10 p-4 border border-[#1F2359]/20">
                   <div className="flex items-center justify-center gap-2">
-                    <Loader className="h-5 w-5 animate-spin text-[#ff6b00]" />
+                    <Loader className="h-5 w-5 animate-spin text-[#088141]" />
                     <p className="text-white font-semibold">{countdown > 0 ? t("verifying", { seconds: countdown }) : t("finalizing")}</p>
                   </div>
                   <div className="h-1 bg-blue-400/20 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] animate-pulse" style={{ width: `${Math.max(0, countdown * 10)}%` }} />
+                    <div className="h-full bg-gradient-to-r from-[#088141] to-[#06a856] animate-pulse" style={{ width: `${Math.max(0, countdown * 10)}%` }} />
                   </div>
                 </div>
               )}
@@ -351,7 +351,7 @@ export default function EmployeePortal() {
                   {!result.success && (
                     <Button 
                       onClick={() => { setResult(undefined); setError(""); setSelecting(true); }}
-                      className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                      className="w-full bg-blue-50/80 hover:bg-white/20 text-white border border-white/20"
                       variant="outline"
                     >
                       {t("verify")}
@@ -364,7 +364,7 @@ export default function EmployeePortal() {
                 <Button 
                   onClick={() => { setSelecting(false); setResult(undefined); setError(""); }}
                   variant="outline"
-                  className="w-full text-white border-blue-400/30 hover:bg-blue-500/10"
+                  className="w-full text-white border-[#1F2359]/20 hover:bg-[#088141]/10"
                   disabled={busy}
                 >
                   Cancel
@@ -374,10 +374,11 @@ export default function EmployeePortal() {
           )}
         </div>
 
-        <div className="text-center text-xs text-blue-200/60 pb-4">
+        <div className="text-center text-xs text-blue-800/60 pb-4">
           <p>Secured Access Portal © 2026</p>
         </div>
       </section>
     </main>
   );
 }
+
