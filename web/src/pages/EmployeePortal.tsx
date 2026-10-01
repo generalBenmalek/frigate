@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { EmployeeAccessOption, EmployeeAccessResult, EmployeeSession } from "@/types/employee";
+import { Camera, LogOut, Lock, AlertCircle, CheckCircle, Loader } from "lucide-react";
 
 class PortalError extends Error {
   constructor(public reason: string, public status: number) {
@@ -143,58 +144,239 @@ export default function EmployeePortal() {
   const available = session?.enabled && session?.has_face;
 
   return (
-    <main className="flex min-h-dvh items-center justify-center bg-background p-4 text-primary">
-      <section className="w-full max-w-lg space-y-6 rounded-2xl border border-secondary-highlight bg-background_alt p-6 shadow-lg">
-        <h1 className="text-2xl font-semibold">{t("title")}</h1>
-        {!session && <p role="status">{t("loading")}</p>}
-        {error && <p role="alert" className="text-danger">{t(`errors.${error}`, { defaultValue: t("errors.verification_failed") })}</p>}
-        {session && !session.authenticated && (
-          <form onSubmit={login} className="space-y-4">
-            <div className="space-y-2"><Label htmlFor="username">{t("username")}</Label>
-              <Input id="username" autoComplete="username" value={username} onChange={(event) => setUsername(event.target.value)} required disabled={busy} maxLength={64} /></div>
-            <div className="space-y-2"><Label htmlFor="password">{t("password")}</Label>
-              <Input id="password" type="password" autoComplete="current-password" value={password} onChange={(event) => setPassword(event.target.value)} required disabled={busy} maxLength={1024} /></div>
-            <Button type="submit" className="w-full" disabled={busy}>{t(busy ? "signingIn" : "login")}</Button>
-          </form>
-        )}
-        {session?.authenticated && (
-          <>
-            <div className="flex items-center justify-between gap-4"><p>{t("welcome", { name: session.name })}</p>
-              <Button variant="outline" onClick={() => void logout()} disabled={busy}>{t("logout")}</Button></div>
-            {!session.enabled && <p role="status">{t("errors.system_disabled")}</p>}
-            {!session.has_face && <p role="status">{t("errors.no_registered_face")}</p>}
-            <Button className="w-full" disabled={!available || busy} onClick={() => { setSelecting(true); setResult(undefined); setError(""); }}>{t("forgotCard")}</Button>
-            {selecting && available && (
-              <form onSubmit={verify} className="space-y-4">
-                <p>{t("instructions")}</p>
-                {optionsLoading && <p role="status">{t("loading")}</p>}
-                {!optionsLoading && options.length === 0 && <p role="status">{t("noDoors")}</p>}
-                <div className="space-y-2"><Label>{t("camera")}</Label>
-                  <Select value={camera} onValueChange={(value) => { setCamera(value); setController(""); setDoor(""); setResult(undefined); }} disabled={busy}>
-                    <SelectTrigger aria-label={t("camera")}><SelectValue placeholder={t("selectCamera")} /></SelectTrigger>
-                    <SelectContent>{cameras.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
-                  </Select></div>
-                <div className="space-y-2"><Label>{t("controller")}</Label>
-                  <Select value={controller} onValueChange={(value) => { setController(value); setDoor(""); setResult(undefined); }} disabled={busy || !camera}>
-                    <SelectTrigger aria-label={t("controller")}><SelectValue placeholder={t("selectController")} /></SelectTrigger>
-                    <SelectContent>{controllers.map((option) => <SelectItem key={option.controller_id} value={option.controller_id}>{option.controller_name}</SelectItem>)}</SelectContent>
-                  </Select></div>
-                <div className="space-y-2"><Label>{t("door")}</Label>
-                  <Select value={door} onValueChange={(value) => { setDoor(value); setResult(undefined); }} disabled={busy || !controller}>
-                    <SelectTrigger aria-label={t("door")}><SelectValue placeholder={t("selectDoor")} /></SelectTrigger>
-                    <SelectContent>{doors.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
-                  </Select></div>
-                {camera && <p>{t("faceCamera", { camera })}</p>}
-                <Button type="submit" className="w-full" disabled={busy || !doors.some((option) => option.id === door)}>{t("verify")}</Button>
-              </form>
-            )}
-            {verifying && <p role="status" aria-live="polite">{countdown > 0 ? t("verifying", { seconds: countdown }) : t("finalizing")}</p>}
-            {result && <div role={result.success ? "status" : "alert"} className="space-y-2 rounded-lg border border-secondary-highlight p-4">
-              {result.success ? <><p className="font-semibold">{t("verified")}</p><p>{t("continue")}</p><p>{t("unlockRequested")}</p></> :
-                <>{result.identity_verified && <p>{t("verified")}</p>}<p className="text-danger">{t(`errors.${result.reason}`, { defaultValue: t("errors.verification_failed") })}</p></>}
-            </div>}
-          </>
-        )}
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-[#003d82] to-[#0a2855] p-4">
+      <section className="w-full max-w-md space-y-8">
+        <div className="flex flex-col items-center justify-center space-y-4 pt-4">
+          <img src="/images/algerie-telecom-seeklogo.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
+          <div className="space-y-2 text-center">
+            <h1 className="text-3xl font-bold text-white">{t("title")}</h1>
+            <p className="text-sm text-blue-100">Employee Access Portal</p>
+          </div>
+        </div>
+
+        <div className="space-y-6 rounded-xl border border-[#ff6b00]/30 bg-white/10 p-8 shadow-2xl backdrop-blur-sm">
+          {!session && <div className="flex items-center justify-center space-x-2 py-8">
+            <Loader className="h-5 w-5 animate-spin text-[#ff6b00]" />
+            <p className="text-white/70">{t("loading")}</p>
+          </div>}
+          
+          {error && <div role="alert" className="flex items-start gap-3 rounded-lg bg-red-500/20 p-4 text-red-100 border border-red-500/30">
+            <AlertCircle className="h-5 w-5 flex-shrink-0 mt-0.5" />
+            <p>{t(`errors.${error}`, { defaultValue: t("errors.verification_failed") })}</p>
+          </div>}
+          
+          {session && !session.authenticated && (
+            <form onSubmit={login} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="username" className="text-white">{t("username")}</Label>
+                <Input 
+                  id="username" 
+                  autoComplete="username" 
+                  value={username} 
+                  onChange={(event) => setUsername(event.target.value)} 
+                  required 
+                  disabled={busy} 
+                  maxLength={64}
+                  className="bg-white/10 border-blue-400/30 text-white placeholder-white/50 focus:border-[#ff6b00] focus:ring-[#ff6b00]/50" 
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password" className="text-white">{t("password")}</Label>
+                <Input 
+                  id="password" 
+                  type="password" 
+                  autoComplete="current-password" 
+                  value={password} 
+                  onChange={(event) => setPassword(event.target.value)} 
+                  required 
+                  disabled={busy} 
+                  maxLength={1024}
+                  className="bg-white/10 border-blue-400/30 text-white placeholder-white/50 focus:border-[#ff6b00] focus:ring-[#ff6b00]/50"
+                />
+              </div>
+              <Button 
+                type="submit" 
+                className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2" 
+                disabled={busy}
+              >
+                {busy ? `${t("signingIn")}...` : t("login")}
+              </Button>
+            </form>
+          )}
+
+          {session?.authenticated && (
+            <div className="space-y-6">
+              <div className="flex items-center justify-between gap-4 pb-4 border-b border-blue-400/20">
+                <p className="text-lg font-semibold text-white">{t("welcome", { name: session.name })}</p>
+                <Button 
+                  variant="ghost" 
+                  size="sm"
+                  onClick={() => void logout()} 
+                  disabled={busy}
+                  className="text-red-300 hover:text-red-100 hover:bg-red-500/20"
+                >
+                  <LogOut className="h-4 w-4 mr-2" />
+                  {t("logout")}
+                </Button>
+              </div>
+
+              {!session.enabled && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100 border border-yellow-500/30">
+                <p>{t("errors.system_disabled")}</p>
+              </div>}
+              {!session.has_face && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100 border border-yellow-500/30">
+                <p>{t("errors.no_registered_face")}</p>
+              </div>}
+
+              <Button 
+                className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2 flex items-center justify-center gap-2" 
+                disabled={!available || busy || selecting} 
+                onClick={() => { setSelecting(true); setResult(undefined); setError(""); }}
+              >
+                <Lock className="h-5 w-5" />
+                {t("forgotCard")}
+              </Button>
+
+              {selecting && available && (
+                <form onSubmit={verify} className="space-y-6 border-t border-blue-400/20 pt-6">
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-blue-100">{t("instructions")}</p>
+                  </div>
+
+                  {optionsLoading && <div className="flex items-center justify-center space-x-2 py-4">
+                    <Loader className="h-4 w-4 animate-spin text-[#ff6b00]" />
+                    <p className="text-white/70 text-sm">{t("loading")}</p>
+                  </div>}
+
+                  {!optionsLoading && options.length === 0 && <div className="rounded-lg bg-yellow-500/20 p-3 text-yellow-100">
+                    <p className="text-sm">{t("noDoors")}</p>
+                  </div>}
+
+                  {!optionsLoading && options.length > 0 && (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-white font-medium flex items-center gap-2">
+                          <Camera className="h-4 w-4 text-[#ff6b00]" />
+                          {t("camera")}
+                        </Label>
+                        <Select value={camera} onValueChange={(value) => { setCamera(value); setController(""); setDoor(""); setResult(undefined); }} disabled={busy}>
+                          <SelectTrigger aria-label={t("camera")} className="bg-white/10 border-blue-400/30 text-white">
+                            <SelectValue placeholder={t("selectCamera")} />
+                          </SelectTrigger>
+                          <SelectContent>{cameras.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-white font-medium">{t("controller")}</Label>
+                        <Select value={controller} onValueChange={(value) => { setController(value); setDoor(""); setResult(undefined); }} disabled={busy || !camera}>
+                          <SelectTrigger aria-label={t("controller")} className="bg-white/10 border-blue-400/30 text-white">
+                            <SelectValue placeholder={t("selectController")} />
+                          </SelectTrigger>
+                          <SelectContent>{controllers.map((option) => <SelectItem key={option.controller_id} value={option.controller_id}>{option.controller_name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-white font-medium">{t("door")}</Label>
+                        <Select value={door} onValueChange={(value) => { setDoor(value); setResult(undefined); }} disabled={busy || !controller}>
+                          <SelectTrigger aria-label={t("door")} className="bg-white/10 border-blue-400/30 text-white">
+                            <SelectValue placeholder={t("selectDoor")} />
+                          </SelectTrigger>
+                          <SelectContent>{doors.map((option) => <SelectItem key={option.id} value={option.id}>{option.name}</SelectItem>)}</SelectContent>
+                        </Select>
+                      </div>
+
+                      {camera && (
+                        <div className="space-y-3 rounded-lg bg-blue-500/10 p-4 border border-blue-400/30">
+                          <div className="flex items-start gap-3">
+                            <Camera className="h-5 w-5 text-[#ff6b00] mt-0.5 flex-shrink-0 animate-pulse" />
+                            <p className="text-sm text-white">{t("faceCamera", { camera })}</p>
+                          </div>
+                          <div className="flex items-center justify-center h-24 bg-white/5 rounded border border-blue-400/20">
+                            <div className="text-center space-y-2">
+                              <Camera className="h-8 w-8 text-[#ff6b00] mx-auto animate-bounce" />
+                              <p className="text-xs text-blue-100">Face the camera directly</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      <Button 
+                        type="submit" 
+                        className="w-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] hover:from-[#ff7a1a] hover:to-[#ff9544] text-white font-semibold py-2" 
+                        disabled={busy || !doors.some((option) => option.id === door)}
+                      >
+                        {t("verify")}
+                      </Button>
+                    </>
+                  )}
+                </form>
+              )}
+
+              {verifying && (
+                <div className="space-y-3 rounded-lg bg-blue-500/10 p-4 border border-blue-400/30">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader className="h-5 w-5 animate-spin text-[#ff6b00]" />
+                    <p className="text-white font-semibold">{countdown > 0 ? t("verifying", { seconds: countdown }) : t("finalizing")}</p>
+                  </div>
+                  <div className="h-1 bg-blue-400/20 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-[#ff6b00] to-[#ff8533] animate-pulse" style={{ width: `${Math.max(0, countdown * 10)}%` }} />
+                  </div>
+                </div>
+              )}
+
+              {result && (
+                <div role={result.success ? "status" : "alert"} className={`space-y-3 rounded-lg p-4 border ${result.success ? 'bg-green-500/20 border-green-400/30' : 'bg-red-500/20 border-red-400/30'}`}>
+                  <div className="flex items-start gap-3">
+                    {result.success ? (
+                      <CheckCircle className="h-5 w-5 text-green-300 mt-0.5 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="h-5 w-5 text-red-300 mt-0.5 flex-shrink-0" />
+                    )}
+                    <div className={result.success ? "text-green-100" : "text-red-100"}>
+                      {result.success ? (
+                        <div className="space-y-1">
+                          <p className="font-semibold">{t("verified")}</p>
+                          <p className="text-sm">{t("continue")}</p>
+                          <p className="text-sm font-semibold text-green-200">{t("unlockRequested")}</p>
+                        </div>
+                      ) : (
+                        <div className="space-y-1">
+                          {result.identity_verified && <p className="text-sm text-yellow-200">{t("verified")}</p>}
+                          <p className="font-semibold">{t(`errors.${result.reason}`, { defaultValue: t("errors.verification_failed") })}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  {!result.success && (
+                    <Button 
+                      onClick={() => { setResult(undefined); setError(""); setSelecting(true); }}
+                      className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/20"
+                      variant="outline"
+                    >
+                      {t("verify")}
+                    </Button>
+                  )}
+                </div>
+              )}
+
+              {selecting && (
+                <Button 
+                  onClick={() => { setSelecting(false); setResult(undefined); setError(""); }}
+                  variant="outline"
+                  className="w-full text-white border-blue-400/30 hover:bg-blue-500/10"
+                  disabled={busy}
+                >
+                  Cancel
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="text-center text-xs text-blue-200/60 pb-4">
+          <p>Secured Access Portal © 2026</p>
+        </div>
       </section>
     </main>
   );
