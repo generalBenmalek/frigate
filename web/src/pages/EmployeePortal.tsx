@@ -147,7 +147,7 @@ export default function EmployeePortal() {
     <main className="flex min-h-dvh flex-col items-center justify-center bg-gradient-to-b from-white to-gray-50 p-4">
       <section className="w-full max-w-md space-y-8">
         <div className="flex flex-col items-center justify-center space-y-4 pt-4">
-          <img src="/images/algerie-telecom-seeklogo-maskable.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
+          <img src="/images/algerie-telecom-seeklogo.png" alt="Algerie Telecom" className="h-16 w-auto drop-shadow-lg" />
           <div className="space-y-2 text-center">
             <h1 className="text-3xl font-bold text-[#1F2359]">{t("title")}</h1>
             <p className="text-sm text-blue-900">Employee Access Portal</p>
@@ -177,7 +177,7 @@ export default function EmployeePortal() {
                   required 
                   disabled={busy} 
                   maxLength={64}
-                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white/50 focus:border-[#088141] focus:ring-[#088141]/50" 
+                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white focus:border-[#088141] focus:ring-[#088141]/50" 
                 />
               </div>
               <div className="space-y-2">
@@ -191,7 +191,7 @@ export default function EmployeePortal() {
                   required 
                   disabled={busy} 
                   maxLength={1024}
-                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white/50 focus:border-[#088141] focus:ring-[#088141]/50"
+                  className="bg-blue-50/80 border-[#1F2359]/20 text-white placeholder-white focus:border-[#088141] focus:ring-[#088141]/50"
                 />
               </div>
               <Button 
@@ -375,10 +375,11 @@ export default function EmployeePortal() {
         </div>
 
         <div className="text-center text-xs text-blue-800/60 pb-4">
-          <p>Secured Access Portal © 2026</p>
+          <p>Secured Access Portal ï¿½ 2026</p>
         </div>
       </section>
     </main>
   );
 }
+
 
