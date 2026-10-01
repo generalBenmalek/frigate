@@ -1,0 +1,52 @@
+server {
+    {{ if .tls.enabled }}
+    listen 0.0.0.0:{{ .listen.employee_port }} ssl;
+    {{ if .ipv6.enabled }}listen [::]:{{ .listen.employee_port }} ssl;{{ end }}
+    ssl_certificate /etc/letsencrypt/live/frigate/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/frigate/privkey.pem;
+    ssl_protocols TLSv1.3;
+    {{ else }}
+    listen 0.0.0.0:{{ .listen.employee_port }};
+    {{ if .ipv6.enabled }}listen [::]:{{ .listen.employee_port }};{{ end }}
+    {{ end }}
+
+    http2 on;
+    root /opt/frigate/web;
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy same-origin always;
+    add_header X-Frame-Options DENY always;
+    client_max_body_size 16k;
+
+    location ^~ /api/employee/ {
+        rewrite ^/api/employee/(.*)$ /employee/$1 break;
+        proxy_pass http://frigate_api;
+        proxy_set_header Host $http_host;
+        proxy_set_header X-Forwarded-Host $http_host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header Remote-User "";
+        proxy_set_header Remote-Role "";
+        proxy_set_header X-Server-Port "";
+        proxy_set_header Authorization "";
+        proxy_next_upstream off;
+        proxy_read_timeout 25s;
+    }
+    location = / { try_files /employee.html =404; }
+    location = /employee.html { try_files $uri =404; }
+    location ^~ /assets/ { try_files $uri =404; }
+    location ^~ /locales/ { try_files $uri =404; }
+    location ^~ /fonts/ { try_files $uri =404; }
+    location ^~ /images/ { try_files $uri =404; }
+    # Production Vite assets use this placeholder; the portal lives at /.
+    location ^~ /BASE_PATH/assets/ {
+        rewrite ^/BASE_PATH/(.*)$ /$1 break;
+        try_files $uri =404;
+    }
+    location ^~ /BASE_PATH/fonts/ {
+        rewrite ^/BASE_PATH/(.*)$ /$1 break;
+        try_files $uri =404;
+    }
+    location / { return 404; }
+}
+
