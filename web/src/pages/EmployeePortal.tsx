@@ -163,7 +163,7 @@ export default function EmployeePortal() {
         {/* ---------- Brand header ---------- */}
         <header className="flex flex-col items-center space-y-4 pt-4 text-center">
           <img
-            src="/images/algerie-telecom-seeklogo.png"
+            src="/images/android-chrome-512x512.png"
             alt="Algérie Telecom"
             className="h-16 w-auto drop-shadow-sm"
           />
