@@ -1,21 +1,21 @@
 {
   "documentTitle": {
-    "default": "Settings - Frigate",
-    "authentication": "Authentication Settings - Frigate",
-    "cameraManagement": "Manage Cameras - Frigate",
-    "cameraReview": "Camera Review Settings - Frigate",
-    "enrichments": "Enrichments Settings - Frigate",
-    "masksAndZones": "Mask and Zone Editor - Frigate",
-    "motionTuner": "Motion Tuner - Frigate",
-    "object": "Debug - Frigate",
-    "general": "UI Settings - Frigate",
-    "globalConfig": "Global Configuration - Frigate",
-    "cameraConfig": "Camera Configuration - Frigate",
-    "frigatePlus": "Frigate+ Settings - Frigate",
-    "detectorsAndModel": "Detectors and model - Frigate",
-    "notifications": "Notification Settings - Frigate",
-    "maintenance": "Maintenance - Frigate",
-    "profiles": "Profiles - Frigate"
+    "default": "Settings - AT",
+    "authentication": "Authentication Settings - AT",
+    "cameraManagement": "Manage Cameras - AT",
+    "cameraReview": "Camera Review Settings - AT",
+    "enrichments": "Enrichments Settings - AT",
+    "masksAndZones": "Mask and Zone Editor - AT",
+    "motionTuner": "Motion Tuner - AT",
+    "object": "Debug - AT",
+    "general": "UI Settings - AT",
+    "globalConfig": "Global Configuration - AT",
+    "cameraConfig": "Camera Configuration - AT",
+    "frigatePlus": "Frigate+ Settings - AT",
+    "detectorsAndModel": "Detectors and model - AT",
+    "notifications": "Notification Settings - AT",
+    "maintenance": "Maintenance - AT",
+    "profiles": "Profiles - AT"
   },
   "button": {
     "overriddenGlobal": "Overridden (Global)",
@@ -764,7 +764,7 @@
     },
     "zones": {
       "label": "Zones",
-      "documentTitle": "Edit Zone - Frigate",
+      "documentTitle": "Edit Zone - AT",
       "desc": {
         "title": "Zones allow you to define a specific area of the frame so you can determine whether or not an object is within a particular area.",
         "documentation": "Documentation"
@@ -820,7 +820,7 @@
     },
     "motionMasks": {
       "label": "Motion Mask",
-      "documentTitle": "Edit Motion Mask - Frigate",
+      "documentTitle": "Edit Motion Mask - AT",
       "desc": {
         "title": "Motion masks are used to prevent unwanted types of motion from triggering detection. Over masking will make it more difficult for objects to be tracked.",
         "documentation": "Documentation"
@@ -852,7 +852,7 @@
     },
     "objectMasks": {
       "label": "Object Masks",
-      "documentTitle": "Edit Object Mask - Frigate",
+      "documentTitle": "Edit Object Mask - AT",
       "desc": {
         "title": "Object filter masks are used to filter out false positives for a given object type based on location.",
         "documentation": "Documentation"
@@ -1972,3 +1972,4 @@
     }
   }
 }
+

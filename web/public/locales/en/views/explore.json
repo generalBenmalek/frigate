@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Explore - Frigate",
+  "documentTitle": "Explore - AT",
   "generativeAI": "Generative AI",
   "exploreMore": "Explore more {{label}} objects",
   "exploreIsUnavailable": {
@@ -263,3 +263,4 @@
     "noImageFound": "No image found for this tracked object."
   }
 }
+

@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Chat - Frigate",
+  "documentTitle": "Chat - AT",
   "title": "Frigate Chat",
   "subtitle": "Your AI assistant for camera management and insights",
   "placeholder": "Ask anything...",
@@ -70,3 +70,4 @@
     "toggle": "Toggle thinking"
   }
 }
+

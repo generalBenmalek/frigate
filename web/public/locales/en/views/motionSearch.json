@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Motion Search - Frigate",
+  "documentTitle": "Motion Search - AT",
   "title": "Motion Search",
   "description": "Draw a polygon to define the region of interest, and specify a time range to search for motion changes within that region.",
   "selectCamera": "Motion Search is loading",
@@ -76,3 +76,4 @@
     "scanSummary": "{{segments}} segments · {{time}}"
   }
 }
+

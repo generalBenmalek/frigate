@@ -1,14 +1,14 @@
 {
   "documentTitle": {
-    "cameras": "Cameras Stats - Frigate",
-    "storage": "Storage Stats - Frigate",
-    "general": "General Stats - Frigate",
-    "enrichments": "Enrichments Stats - Frigate",
+    "cameras": "Cameras Stats - AT",
+    "storage": "Storage Stats - AT",
+    "general": "General Stats - AT",
+    "enrichments": "Enrichments Stats - AT",
     "logs": {
-      "frigate": "Frigate Logs - Frigate",
-      "go2rtc": "Go2RTC Logs - Frigate",
-      "nginx": "Nginx Logs - Frigate",
-      "websocket": "Messages Logs - Frigate"
+      "frigate": "Frigate Logs - AT",
+      "go2rtc": "Go2RTC Logs - AT",
+      "nginx": "Nginx Logs - AT",
+      "websocket": "Messages Logs - AT"
     }
   },
   "title": "System",
@@ -267,3 +267,4 @@
     }
   }
 }
+

@@ -1,7 +1,7 @@
 {
   "time": {
     "untilForTime": "Until {{time}}",
-    "untilForRestart": "Until Frigate restarts.",
+    "untilForRestart": "Until AT restarts.",
     "untilRestart": "Until restart",
     "never": "Never",
     "ago": "{{timeAgo}} ago",
@@ -112,7 +112,7 @@
   },
   "field": {
     "optional": "Optional",
-    "internalID": "The Internal ID Frigate uses in the configuration and database"
+    "internalID": "The Internal ID AT uses in the configuration and database"
   },
   "button": {
     "add": "Add",
@@ -246,7 +246,7 @@
       "title": "Documentation",
       "label": "Frigate documentation"
     },
-    "restart": "Restart Frigate",
+    "restart": "Restart AT",
     "live": {
       "title": "Live",
       "allCameras": "All Cameras",
@@ -306,12 +306,12 @@
     "more": "More pages"
   },
   "accessDenied": {
-    "documentTitle": "Access Denied - Frigate",
+    "documentTitle": "Access Denied - AT",
     "title": "Access Denied",
     "desc": "You don't have permission to view this page."
   },
   "notFound": {
-    "documentTitle": "Not Found - Frigate",
+    "documentTitle": "Not Found - AT",
     "title": "404",
     "desc": "Page not found"
   },
@@ -326,4 +326,5 @@
     "savedPlaceholder": "Saved — leave blank to keep current"
   }
 }
+
 

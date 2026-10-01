@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Classification Models - Frigate",
+  "documentTitle": "Classification Models - AT",
   "disabled": "Disabled",
   "details": {
     "scoreInfo": "Score represents the average classification confidence across all detections of this object.",
@@ -210,3 +210,4 @@
     }
   }
 }
+

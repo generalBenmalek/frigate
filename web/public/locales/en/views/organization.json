@@ -1,5 +1,5 @@
 {
-  "documentTitle": "Access Controllers - Frigate",
+  "documentTitle": "Access Controllers - AT",
   "title": "Access Controllers",
   "subtitle": "Manage Dahua access controllers and recent access events.",
   "tabs": {
@@ -256,3 +256,4 @@
     "connectionSummary": "{{online}} of {{total}} controllers connected."
   }
 }
+
