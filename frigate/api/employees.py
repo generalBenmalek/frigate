@@ -67,6 +67,7 @@ class EmployeeBody(BaseModel):
     username: str | None = Field(default=None, max_length=64)
     password: str | None = Field(default=None, max_length=1024)
     enabled: bool = True
+    super_employee: bool = Field(default=False, strict=True)
 
 
 class EmployeePasswordBody(BaseModel):
@@ -185,6 +186,7 @@ async def create_employee(request: Request, body: EmployeeBody):
             employee = await asyncio.to_thread(Employee.create,
                 id=uuid4().hex, name=name, name_key=name.casefold(), username=username,
                 password_hash=password_hash, enabled=body.enabled,
+                super_employee=body.super_employee,
                 face_name=name if await asyncio.to_thread(face_signature, name) else None)
         except IntegrityError as err:
             raise EmployeeAccessError("duplicate_account", 409) from err
@@ -208,6 +210,8 @@ async def update_employee(request: Request, employee_id: str, body: EmployeeBody
         await update_identity(request, employee, name)
         employee.username = username
         employee.enabled = body.enabled
+        if "super_employee" in body.model_fields_set:
+            employee.super_employee = body.super_employee
         if password_hash is not None:
             employee.password_hash = password_hash
         if employee.face_name is None and await asyncio.to_thread(face_signature, name):

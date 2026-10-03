@@ -12,6 +12,7 @@ export type EmployeeRecord = {
   display_name: string;
   username: string | null;
   enabled: boolean;
+  super_employee: boolean;
   pending: boolean;
   has_face: boolean;
   face_name: string | null;

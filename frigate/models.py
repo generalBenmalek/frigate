@@ -194,6 +194,7 @@ class Employee(Model):
     username = CharField(null=True, unique=True, max_length=100)
     password_hash = CharField(null=True, max_length=120)
     enabled = BooleanField(default=True)
+    super_employee = BooleanField(default=False)
     auth_version = IntegerField(default=0)
     face_name = CharField(null=True, unique=True, max_length=50)
 

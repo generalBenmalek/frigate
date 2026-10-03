@@ -18,7 +18,7 @@ import type { FaceLibraryData } from "@/types/face";
 
 type Controller = { id: string; name: string; associated_camera: string | null };
 type Door = { id: string; name: string };
-type AccountForm = { employee: EmployeeRecord | null; name: string; username: string; password: string; enabled: boolean };
+type AccountForm = { employee: EmployeeRecord | null; name: string; username: string; password: string; enabled: boolean; super_employee: boolean };
 
 export default function Employees() {
   const { t } = useTranslation("views/employees");
@@ -78,14 +78,14 @@ export default function Employees() {
   async function saveAccount(event: FormEvent) {
     event.preventDefault();
     if (!form) return;
-    const body = { name: form.name, username: form.username, password: form.password || null, enabled: form.enabled };
+    const body = { name: form.name, username: form.username, password: form.password || null, enabled: form.enabled, super_employee: form.super_employee };
     const saved = await act(() => form.employee ? axios.put(`employees/${form.employee.id}`, body) : axios.post("employees", body));
     if (saved) setForm(null);
   }
 
   function edit(employee: EmployeeRecord | null) {
     setError("");
-    setForm({ employee, name: employee?.name ?? employee?.display_name ?? "", username: employee?.username ?? "", password: "", enabled: employee?.enabled ?? true });
+    setForm({ employee, name: employee?.name ?? employee?.display_name ?? "", username: employee?.username ?? "", password: "", enabled: employee?.enabled ?? true, super_employee: employee?.super_employee ?? false });
   }
 
   return (
@@ -116,14 +116,14 @@ export default function Employees() {
             <TableCell>{employee.username ?? t("notAssigned")}</TableCell>
             <TableCell>{t(!employee.enabled ? "disabled" : employee.pending ? "pending" : "active")}</TableCell>
             <TableCell>{t(employee.has_face ? "registered" : "notRegistered")}</TableCell>
-            <TableCell>{employee.permissions.length ? employee.permissions.map((permission) => <p key={permission.controller_id}>{t("doorCount", { controller: controllerName(permission.controller_id), count: permission.doors.length })}</p>) : t("none")}</TableCell>
+            <TableCell>{employee.super_employee ? t("allDoors") : employee.permissions.length ? employee.permissions.map((permission) => <p key={permission.controller_id}>{t("doorCount", { controller: controllerName(permission.controller_id), count: permission.doors.length })}</p>) : t("none")}</TableCell>
             <TableCell><div className="flex max-w-xl flex-wrap gap-2">
               <Button size="sm" variant="outline" disabled={working} onClick={() => edit(employee)}>{t("edit")}</Button>
               <Button size="sm" variant="outline" disabled={working} onClick={() => void act(() => axios.put(`employees/${employee.id}/enabled`, { enabled: !employee.enabled }))}>{t(employee.enabled ? "disable" : "enable")}</Button>
               <Button size="sm" variant="outline" disabled={working} onClick={() => { setNewPassword(""); setPasswordTarget(employee); }}>{t("changePassword")}</Button>
               <Button size="sm" variant="outline" disabled={working || !employee.name} onClick={() => setUploadTarget(employee)}>{t("uploadFace")}</Button>
               <Button size="sm" variant="outline" disabled={working || !employee.name} onClick={() => { setSelectedFace(employee.face_name ?? ""); setRenameFace(false); setFaceTarget(employee); }}>{t("existingFace")}</Button>
-              <Button size="sm" variant="outline" disabled={working} onClick={() => { setSelectedController(employee.permissions[0]?.controller_id ?? controllers?.[0]?.id ?? ""); setPermissionTarget(employee); }}>{t("assignDoors")}</Button>
+              <Button size="sm" variant="outline" disabled={working || employee.super_employee} onClick={() => { setSelectedController(employee.permissions[0]?.controller_id ?? controllers?.[0]?.id ?? ""); setPermissionTarget(employee); }}>{t("assignDoors")}</Button>
               <Button size="sm" variant="outline" disabled={working || employee.sources.length === 0} onClick={() => { setSurvivor(""); setLinkTarget(employee); }}>{t("linkRecords")}</Button>
               <Button size="sm" variant="destructive" disabled={working} onClick={() => setDeleteTarget(employee)}>{t("delete")}</Button>
             </div></TableCell>
@@ -152,6 +152,7 @@ export default function Employees() {
           <div className="space-y-2"><Label htmlFor="employee-username">{t("username")}</Label><Input id="employee-username" value={form.username} autoComplete="off" minLength={3} maxLength={64} required onChange={(event) => setForm({ ...form, username: event.target.value })} /></div>
           <div className="space-y-2"><Label htmlFor="employee-password">{t("password")}</Label><Input id="employee-password" type="password" autoComplete="new-password" value={form.password} minLength={12} maxLength={1024} required={!form.employee || form.employee.pending} onChange={(event) => setForm({ ...form, password: event.target.value })} /><p className="text-sm text-secondary-foreground">{t("passwordHelp")}</p></div>
           <div className="flex items-center gap-2"><Switch id="employee-enabled" checked={form.enabled} onCheckedChange={(enabled) => setForm({ ...form, enabled })} /><Label htmlFor="employee-enabled">{t("enabled")}</Label></div>
+          <div className="flex items-center gap-2"><Switch id="employee-super" checked={form.super_employee} disabled={working} onCheckedChange={(super_employee) => setForm({ ...form, super_employee })} /><Label htmlFor="employee-super">{t("superEmployee")}</Label></div>
           {error && <p role="alert" className="text-danger">{t(`errors.${error}`, { defaultValue: t("errors.save_failed") })}</p>}
           <DialogFooter><Button type="button" variant="outline" disabled={working} onClick={() => setForm(null)}>{t("cancel")}</Button><Button type="submit" disabled={working}>{t("save")}</Button></DialogFooter>
         </form>}

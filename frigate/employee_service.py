@@ -102,6 +102,7 @@ def serialize_employee(employee: Employee) -> dict[str, Any]:
         "id": employee.id, "name": employee.name,
         "display_name": employee.name or (sources[0].name if sources else ""),
         "username": employee.username, "enabled": employee.enabled,
+        "super_employee": employee.super_employee,
         "pending": not bool(employee.name and employee.username and employee.password_hash),
         "has_face": bool(face_signature(employee.face_name)), "face_name": employee.face_name,
         "sources": [{"id": source.id, "controller_id": source.controller_id,
@@ -364,7 +365,10 @@ class EmployeeService:
                 raise EmployeeAccessError("no_registered_face", 403)
             device = AccessControl.get_or_none(AccessControl.id == controller_id)
             camera_config = self.config.cameras.get(camera)
-            if device is None or device.associated_camera != camera or door_id not in employee_doors(employee_id, controller_id):
+            if device is None or device.associated_camera != camera or (
+                not employee.super_employee
+                and door_id not in employee_doors(employee_id, controller_id)
+            ):
                 raise EmployeeAccessError("access_denied", 403)
             if camera_config is None or not camera_config.enabled or not camera_config.detect.enabled:
                 raise EmployeeAccessError("snapshot_failed")

@@ -8,6 +8,8 @@
   "enable": "Enable",
   "disable": "Disable",
   "enabled": "Employee enabled",
+  "superEmployee": "Super Employee",
+  "allDoors": "All doors",
   "systemEnabled": "Cardless access enabled",
   "localOnly": "Controls employee cardless access. Existing physical card permissions remain unchanged.",
   "search": "Search employees",

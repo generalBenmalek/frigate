@@ -187,15 +187,15 @@ async def employee_options(request: Request, employee: Employee = Depends(requir
         camera = service.config.cameras.get(device.associated_camera)
         if camera is None or not camera.enabled or not camera.detect.enabled or not camera.face_recognition.enabled or not service.config.face_recognition.enabled:
             return None
-        allowed = await asyncio.to_thread(employee_doors, employee.id, device.id)
-        if not allowed:
+        allowed = [] if employee.super_employee else await asyncio.to_thread(employee_doors, employee.id, device.id)
+        if not employee.super_employee and not allowed:
             return None
         try:
             async with service.sync_semaphore:
                 doors = await asyncio.wait_for(build_controller(device).get_doors_async(), timeout=3)
         except (DahuaOperationError, TimeoutError):
             return None
-        permitted = [{"id": str(door["id"]), "name": str(door["name"])} for door in doors if str(door["id"]) in allowed]
+        permitted = [{"id": str(door["id"]), "name": str(door["name"])} for door in doors if employee.super_employee or str(door["id"]) in allowed]
         if not permitted:
             return None
         return {"camera": device.associated_camera, "controller_id": device.id,
