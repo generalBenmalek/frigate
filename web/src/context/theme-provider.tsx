@@ -50,7 +50,7 @@ type ThemeProviderState = {
 const initialState: ThemeProviderState = {
   theme: "system",
   systemTheme: undefined,
-  colorScheme: "theme-default",
+  colorScheme: "theme-AT",
   setTheme: () => null,
   setColorScheme: () => null,
 };
@@ -86,7 +86,7 @@ function updateThemeMetaTags(theme: ActiveTheme): void {
 export function ThemeProvider({
   children,
   defaultTheme = "system",
-  defaultColorScheme = "theme-default",
+  defaultColorScheme = "theme-AT",
   storageKey = "frigate-ui-theme",
   ...props
 }: ThemeProviderProps) {

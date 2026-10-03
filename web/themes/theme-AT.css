@@ -1,69 +1,66 @@
 @layer base {
   .theme-AT.light {
-    --background: 220 16% 96%;
-    --background-alt: 215 14% 92%;
+    --background: 0 0% 100%;
+    --background-alt: 210 14% 97%;
     --foreground: 222 20% 16%;
-    --muted: 215 14% 80%;
-    --muted-foreground: 222 20% 16%;
-    --popover: 220 16% 96%;
+    --muted: 210 12% 94%;
+    --muted-foreground: 220 8% 38%;
+    --popover: 0 0% 100%;
     --popover-foreground: 222 20% 16%;
-    --border: 222 20% 70%;
-    --input: 222 20% 70%;
-    --card: 220 16% 96%;
+    --border: 220 8% 54%;
+    --input: 220 8% 54%;
+    --card: 0 0% 100%;
     --card-foreground: 222 20% 16%;
-    /* Official AT Blue #1F2359 */
-    --primary: 223 44% 19%;
-    --primary-variant: 223 44% 40%;
-    --primary-foreground: 220 16% 96%;
-    /* Official AT Green #088141 */
-    --secondary: 150 93% 26%;
-    --secondary-foreground: 220 16% 96%;
-    --secondary-highlight: 150 93% 35%;
-    --neutral: 0 0% 45.1%;
-    --neutral_variant: 0 0% 32.2%;
-    /* Use green for accent */
-    --accent: 150 93% 26%;
-    --accent-foreground: 220 16% 96%;
-    --destructive: 0 80% 50%;
-    --destructive-foreground: 222 20% 16%;
-    --warning: 45 100% 51%;
-    --warning-foreground: 222 20% 16%;
-    --ring: 223 44% 19%;
-    --selected: 223 44% 19%;
-    --selected-foreground: 220 16% 96%;
+    /* Logo blue #1F2359 and green #088141. */
+    --primary: 235.86 48.33% 23.53%;
+    --primary-variant: 235.86 40% 35%;
+    --primary-foreground: 0 0% 100%;
+    /* Secondary foreground also appears directly on reading surfaces. */
+    --secondary: 148 20% 94%;
+    --secondary-foreground: 220 10% 32%;
+    --secondary-highlight: 148 15% 82%;
+    --neutral: 220 8% 38%;
+    --neutral_variant: 220 10% 30%;
+    --accent: 148 30% 91%;
+    --accent-foreground: 148 60% 20%;
+    --destructive: 0 70% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 44 95% 90%;
+    --warning-foreground: 28 80% 24%;
+    --ring: 148.26 88.32% 26.86%;
+    --selected: 148.26 88.32% 26.86%;
+    --selected-foreground: 0 0% 100%;
   }
 
   .theme-AT.dark {
-    --background: 220 16% 16%;
-    --background-alt: 215 14% 12%;
+    --background: 220 7% 10%;
+    --background-alt: 220 7% 14%;
     --foreground: 222 20% 96%;
-    --muted: 215 14% 25%;
-    --muted-foreground: 222 20% 66%;
-    --popover: 220 16% 16%;
-    --popover-foreground: 222 20% 66%;
-    --border: 222 20% 40%;
-    --input: 222 20% 40%;
-    --card: 220 16% 16%;
+    --muted: 220 7% 20%;
+    --muted-foreground: 210 8% 72%;
+    --popover: 220 7% 17%;
+    --popover-foreground: 222 20% 96%;
+    --border: 220 6% 50%;
+    --input: 220 6% 50%;
+    --card: 220 7% 14%;
     --card-foreground: 222 20% 96%;
-    /* Official AT Blue #1F2359 */
-    --primary: 223 44% 60%;
-    --primary-variant: 223 44% 45%;
-    --primary-foreground: 220 16% 16%;
-    /* Official AT Green #088141 */
-    --secondary: 150 93% 40%;
-    --secondary-foreground: 220 16% 16%;
-    --secondary-highlight: 150 93% 50%;
-    --neutral: 0 0% 45.1%;
-    --neutral_variant: 0 0% 32.2%;
-    /* Use green for accent */
-    --accent: 150 93% 40%;
-    --accent-foreground: 220 16% 16%;
-    --destructive: 0 80% 50%;
-    --destructive-foreground: 222 20% 96%;
-    --warning: 45 100% 51%;
-    --warning-foreground: 222 20% 96%;
-    --ring: 223 44% 40%;
-    --selected: 223 44% 45%;
-    --selected-foreground: 220 16% 16%;
+    /* Lighter blue text remains readable on neutral dark surfaces. */
+    --primary: 235.86 48% 80%;
+    --primary-variant: 235.86 38% 70%;
+    --primary-foreground: 235.86 48.33% 23.53%;
+    --secondary: 148 10% 19%;
+    --secondary-foreground: 210 8% 78%;
+    --secondary-highlight: 148 10% 40%;
+    --neutral: 210 8% 72%;
+    --neutral_variant: 210 8% 65%;
+    --accent: 148 22% 24%;
+    --accent-foreground: 148 35% 92%;
+    --destructive: 0 65% 40%;
+    --destructive-foreground: 0 0% 100%;
+    --warning: 28 60% 20%;
+    --warning-foreground: 44 95% 80%;
+    --ring: 148 55% 62%;
+    --selected: 148.26 88.32% 26.86%;
+    --selected-foreground: 0 0% 100%;
   }
 }
