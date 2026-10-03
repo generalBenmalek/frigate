@@ -4,10 +4,12 @@ import asyncio
 import logging
 import time
 from datetime import datetime, tzinfo
+from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
+from peewee import fn
 
 from frigate.access_controller_service import (
     build_controller,
@@ -15,16 +17,29 @@ from frigate.access_controller_service import (
     poll_all_controllers,
     probe_device,
     probe_device_with_info,
+    publish_access_event,
     reverify_access_event,
     serialize_access_event,
     synchronize_controller_history,
 )
-from frigate.access_controller_verification import SNAPSHOT_COUNT, SNAPSHOT_RETENTION, snapshot_path
+from frigate.access_controller_verification import (
+    SNAPSHOT_COUNT,
+    SNAPSHOT_RETENTION,
+    snapshot_path,
+)
+from frigate.access_event_review import (
+    FINAL_STATUSES,
+    AccessReviewError,
+    filter_access_events,
+    granted_events,
+    submit_access_review,
+)
 from frigate.api.auth import require_role
 from frigate.api.defs.request.access_controller_body import (
     AccessControllerBody,
     AccessControllerUpdateBody,
     AccessEventHistoryBody,
+    AccessEventReviewBody,
 )
 from frigate.api.defs.tags import Tags
 from frigate.dahua_adapter import (
@@ -32,7 +47,7 @@ from frigate.dahua_adapter import (
     DahuaNotSupported,
     DahuaOperationError,
 )
-from frigate.models import AccessControl, AccessEvent
+from frigate.models import AccessControl, AccessEvent, AccessEventReview
 
 logger = logging.getLogger(__name__)
 
@@ -366,16 +381,99 @@ def get_access_controller_events(
     events = []
     for event in query.order_by(AccessEvent.occurred_at.desc(), AccessEvent.id).iterator():
         serialized = serialize_access_event(event, names.get(event.device_id))
-        # is_door_event = serialized["event_code"] in {"DoorStatus", "DoorCard", "KeepLightOn", "DoorOpen", "DoorClose"}
-        # if not is_door_event and any(value and value.strip().casefold() not in str(serialized.get(key) if serialized.get(key) is not None else "").casefold()
-        #        for value, key in ((name, "user_name"), (user_id, "user_id"), (card_no, "card_number"))):
-        #     continue
-        # if status and serialized["status"] != status:
-        #     continue
+        if any(value and value.strip().casefold() not in str(serialized.get(key) if serialized.get(key) is not None else "").casefold()
+               for value, key in ((name, "user_name"), (user_id, "user_id"), (card_no, "card_number"))):
+            continue
+        if status and serialized["status"] != status:
+            continue
         events.append(serialized)
         if len(events) >= count:
             break
     return JSONResponse(content=events)
+
+
+@router.get(
+    "/access-controllers/events/review",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+def get_access_event_review(
+    start: datetime | None = None, end: datetime | None = None,
+    device_id: str | None = None, name: str | None = None,
+    user_id: str | None = None, card_no: str | None = None,
+    door_id: str | None = None, camera: str | None = None,
+    source: Literal["controller", "employee_portal"] | None = None,
+    reviewed: Literal["all", "reviewed", "unreviewed"] = "unreviewed",
+    classification: Literal["valid", "warning", "unknown", "pending"] | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=50, ge=1, le=100),
+):
+    """List granted access with shared review state and unpaginated counts."""
+    if any(bound is not None and bound.tzinfo is None for bound in (start, end)):
+        return JSONResponse({"reason": "timezone_required"}, status_code=400)
+    if start is not None and end is not None and start > end:
+        return JSONResponse({"reason": "invalid_time_range"}, status_code=400)
+    query = filter_access_events(
+        granted_events(), start=start.timestamp() if start else None,
+        end=end.timestamp() if end else None, device_id=device_id, name=name,
+        user_id=user_id, card_no=card_no, door_id=door_id, camera=camera,
+        source=source, reviewed=None if reviewed == "all" else reviewed == "reviewed",
+    )
+    effective = fn.COALESCE(AccessEvent.review_status, AccessEvent.verification_status)
+    counts = {status: 0 for status in (*FINAL_STATUSES, "pending")}
+    for row in query.select(effective.alias("classification"), fn.COUNT(AccessEvent.id).alias("count")).group_by(effective).dicts():
+        bucket = row["classification"] if row["classification"] in FINAL_STATUSES else "pending"
+        counts[bucket] += row["count"]
+    counts["all"] = sum(counts.values())
+    if classification == "pending":
+        query = query.where(~effective.in_(FINAL_STATUSES))
+    elif classification:
+        query = query.where(effective == classification)
+    total = query.count()
+    names = {device.id: device.name for device in AccessControl.select()}
+    events = [
+        serialize_access_event(event, names.get(event.device_id))
+        for event in query.order_by(AccessEvent.occurred_at.desc(), AccessEvent.id).paginate(page, page_size)
+    ]
+    return JSONResponse({
+        "events": events, "total": total, "counts": counts,
+        "page": page, "page_size": page_size,
+    })
+
+
+@router.post(
+    "/access-controllers/events/{event_id}/review",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+async def review_access_event(request: Request, event_id: str, body: AccessEventReviewBody):
+    """Confirm or correct classification as the authenticated administrator."""
+    reviewer = request.headers.get("remote-user")
+    if not reviewer:
+        return JSONResponse({"reason": "reviewer_required"}, status_code=401)
+    try:
+        await asyncio.to_thread(
+            submit_access_review, event_id, reviewer, body.action,
+            body.classification, body.expected_revision,
+        )
+    except AccessReviewError as err:
+        return JSONResponse({"reason": err.reason}, status_code=err.status_code)
+    await asyncio.to_thread(publish_access_event, event_id)
+    event = await asyncio.to_thread(AccessEvent.get_by_id, event_id)
+    device = await asyncio.to_thread(AccessControl.get_or_none, AccessControl.id == event.device_id)
+    return JSONResponse(serialize_access_event(event, device.name if device else None))
+
+
+@router.get(
+    "/access-controllers/events/{event_id}/reviews",
+    dependencies=[Depends(require_role(["admin"]))],
+)
+def get_access_event_reviews(event_id: str):
+    """Return every confirmation and correction, most recent first."""
+    if not AccessEvent.select().where(AccessEvent.id == event_id).exists():
+        return JSONResponse({"reason": "event_not_found"}, status_code=404)
+    return JSONResponse(list(
+        AccessEventReview.select().where(AccessEventReview.event_id == event_id)
+        .order_by(AccessEventReview.revision.desc()).dicts()
+    ))
 
 
 @router.get(

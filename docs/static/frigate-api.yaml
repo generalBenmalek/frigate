@@ -10,6 +10,1473 @@ servers:
   - url: https://demo.frigate.video/api
   - url: http://localhost:5001/api
 paths:
+  /access-controllers:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controllers
+      description: |-
+        **Access:** Admin role required.
+
+        List saved access controllers and their latest connection results.
+      operationId: get_access_controllers_access_controllers_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    post:
+      tags:
+        - Access Controller
+      summary: Create Access Controller
+      description: |-
+        **Access:** Admin role required.
+
+        Save a Dahua controller and try its connection.
+      operationId: create_access_controller_access_controllers_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessControllerBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}:
+    put:
+      tags:
+        - Access Controller
+      summary: Update Access Controller
+      description: |-
+        **Access:** Admin role required.
+
+        Update a controller and refresh its connection result.
+      operationId: update_access_controller_access_controllers__device_id__put
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessControllerUpdateBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    delete:
+      tags:
+        - Access Controller
+      summary: Delete Access Controller
+      description: |-
+        **Access:** Admin role required.
+
+        Delete a controller.
+      operationId: 
+        delete_access_controller_access_controllers__device_id__delete
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/refresh-all:
+    post:
+      tags:
+        - Access Controller
+      summary: Refresh All Access Controllers
+      description: |-
+        **Access:** Admin role required.
+
+        Try all configured controllers and return each connection result.
+      operationId: 
+        refresh_all_access_controllers_access_controllers_refresh_all_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/refresh:
+    post:
+      tags:
+        - Access Controller
+      summary: Refresh Access Controller
+      description: |-
+        **Access:** Admin role required.
+
+        Retry one controller and return the actual connection status.
+      operationId: 
+        refresh_access_controller_access_controllers__device_id__refresh_post
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/sync:
+    post:
+      tags:
+        - Access Controller
+      summary: Sync Access Controller Events
+      description: |-
+        **Access:** Admin role required.
+
+        Import selected controller history without discarding locally saved events.
+      operationId: 
+        sync_access_controller_events_access_controllers_events_sync_post
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessEventHistoryBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/{event_id}/snapshots/{index}:
+    get:
+      tags:
+        - Access Controller
+      summary: Access Event Snapshot
+      description: |-
+        **Access:** Admin role required.
+
+        Return a fresh scan-time screenshot from the bounded camera evidence cache.
+      operationId: 
+        access_event_snapshot_access_controllers_events__event_id__snapshots__index__get
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Event Id
+        - name: index
+          in: path
+          required: true
+          schema:
+            type: integer
+            title: Index
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/{event_id}/verify:
+    post:
+      tags:
+        - Access Controller
+      summary: Verify Access Controller Event
+      description: |-
+        **Access:** Admin role required.
+
+        Retry camera verification without comparing an old scan to today's live view.
+      operationId: 
+        verify_access_controller_event_access_controllers_events__event_id__verify_post
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Events
+      description: |-
+        **Access:** Admin role required.
+
+        Return stored controller records with their verification results.
+      operationId: get_access_controller_events_access_controllers_events_get
+      parameters:
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Device Id
+        - name: start
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Start
+        - name: end
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: End
+        - name: name
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Name
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: User Id
+        - name: card_no
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Card No
+        - name: status
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+                pattern: ^(OK|Failed)$
+              - type: 'null'
+            title: Status
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 1024
+            minimum: 1
+            default: 500
+            title: Count
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/review:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Event Review
+      description: |-
+        **Access:** Admin role required.
+
+        List granted access with shared review state and unpaginated counts.
+      operationId: get_access_event_review_access_controllers_events_review_get
+      parameters:
+        - name: start
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+                format: date-time
+              - type: 'null'
+            title: Start
+        - name: end
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+                format: date-time
+              - type: 'null'
+            title: End
+        - name: device_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Device Id
+        - name: name
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Name
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: User Id
+        - name: card_no
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Card No
+        - name: door_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Door Id
+        - name: camera
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Camera
+        - name: source
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - enum:
+                  - controller
+                  - employee_portal
+                type: string
+              - type: 'null'
+            title: Source
+        - name: reviewed
+          in: query
+          required: false
+          schema:
+            enum:
+              - all
+              - reviewed
+              - unreviewed
+            type: string
+            default: unreviewed
+            title: Reviewed
+        - name: classification
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - enum:
+                  - valid
+                  - warning
+                  - unknown
+                  - pending
+                type: string
+              - type: 'null'
+            title: Classification
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+            title: Page
+        - name: page_size
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 100
+            minimum: 1
+            default: 50
+            title: Page Size
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/{event_id}/review:
+    post:
+      tags:
+        - Access Controller
+      summary: Review Access Event
+      description: |-
+        **Access:** Admin role required.
+
+        Confirm or correct classification as the authenticated administrator.
+      operationId: 
+        review_access_event_access_controllers_events__event_id__review_post
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Event Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessEventReviewBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/events/{event_id}/reviews:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Event Reviews
+      description: |-
+        **Access:** Admin role required.
+
+        Return every confirmation and correction, most recent first.
+      operationId: 
+        get_access_event_reviews_access_controllers_events__event_id__reviews_get
+      parameters:
+        - name: event_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Event Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/events:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Device Events
+      description: |-
+        **Access:** Admin role required.
+
+        Return stored access events for one controller.
+      operationId: 
+        get_access_controller_device_events_access_controllers__device_id__events_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+        - name: start
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Start
+        - name: end
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: End
+        - name: name
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Name
+        - name: user_id
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: User Id
+        - name: card_no
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+              - type: 'null'
+            title: Card No
+        - name: status
+          in: query
+          required: false
+          schema:
+            anyOf:
+              - type: string
+                pattern: ^(OK|Failed)$
+              - type: 'null'
+            title: Status
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+            maximum: 1024
+            minimum: 1
+            default: 500
+            title: Count
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/live:
+    get:
+      tags:
+        - Access Controller
+      summary: Access Controller Live Events
+      description: |-
+        **Access:** Admin role required.
+
+        Probe a controller and return its current system information.
+      operationId: 
+        access_controller_live_events_access_controllers__device_id__live_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/capabilities:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Capabilities
+      description: |-
+        **Access:** Admin role required.
+
+        List selected provider capabilities and their current verification state.
+      operationId: 
+        get_access_controller_capabilities_access_controllers__device_id__capabilities_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/system-info:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller System Info
+      description: |-
+        **Access:** Admin role required.
+
+        Fetch reported controller information from the configured provider.
+      operationId: 
+        get_access_controller_system_info_access_controllers__device_id__system_info_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/doors:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Doors
+      description: |-
+        **Access:** Admin role required.
+
+        Discover and list the doors reported by a controller.
+      operationId: 
+        get_access_controller_doors_access_controllers__device_id__doors_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/doors/{door_id}:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Door Status
+      description: |-
+        **Access:** Admin role required.
+
+        Return the controller's observed status for one discovered door.
+      operationId: 
+        get_access_controller_door_status_access_controllers__device_id__doors__door_id__get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+        - name: door_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Door Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/doors/{door_id}/open:
+    post:
+      tags:
+        - Access Controller
+      summary: Open Access Controller Door
+      description: |-
+        **Access:** Admin role required.
+
+        Request an unlock through the controller's door relay.
+      operationId: 
+        open_access_controller_door_access_controllers__device_id__doors__door_id__open_post
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+        - name: door_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Door Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/doors/{door_id}/close:
+    post:
+      tags:
+        - Access Controller
+      summary: Close Access Controller Door
+      description: |-
+        **Access:** Admin role required.
+
+        Request relocking through the controller's door relay.
+      operationId: 
+        close_access_controller_door_access_controllers__device_id__doors__door_id__close_post
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+        - name: door_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Door Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/preview:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Preview
+      description: |-
+        **Access:** Admin role required.
+
+        Report the best available controller or associated-camera preview.
+      operationId: 
+        get_access_controller_preview_access_controllers__device_id__preview_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /access-controllers/{device_id}/preview/snapshot:
+    get:
+      tags:
+        - Access Controller
+      summary: Get Access Controller Snapshot
+      description: |-
+        **Access:** Admin role required.
+
+        Return a native controller snapshot when the selected provider supports it.
+      operationId: 
+        get_access_controller_snapshot_access_controllers__device_id__preview_snapshot_get
+      parameters:
+        - name: device_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Device Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees:
+    get:
+      tags:
+        - Employees
+      summary: List Employees
+      description: |-
+        **Access:** Admin role required.
+
+        List employees, enrollment status, and effective local permissions.
+      operationId: list_employees_employees_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    post:
+      tags:
+        - Employees
+      summary: Create Employee
+      description: |-
+        **Access:** Admin role required.
+
+        Create a local employee without writing to physical controllers.
+      operationId: create_employee_employees_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}:
+    put:
+      tags:
+        - Employees
+      summary: Update Employee
+      description: |-
+        **Access:** Admin role required.
+
+        Update an account, revoking sessions when its identity or credentials change.
+      operationId: update_employee_employees__employee_id__put
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    delete:
+      tags:
+        - Employees
+      summary: Delete Employee
+      description: |-
+        **Access:** Admin role required.
+
+        Delete the account, retaining faces and tombstoning its controller links.
+      operationId: delete_employee_employees__employee_id__delete
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}/enabled:
+    put:
+      tags:
+        - Employees
+      summary: Enable Employee
+      description: |-
+        **Access:** Admin role required.
+
+        Enable or disable portal access without changing card permissions.
+      operationId: enable_employee_employees__employee_id__enabled_put
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeEnabledBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}/password:
+    put:
+      tags:
+        - Employees
+      summary: Change Employee Password
+      description: |-
+        **Access:** Admin role required.
+
+        Reset an employee password and invalidate all existing employee sessions.
+      operationId: change_employee_password_employees__employee_id__password_put
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeePasswordBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}/face:
+    post:
+      tags:
+        - Employees
+      summary: Upload Employee Face
+      description: |-
+        **Access:** Admin role required.
+
+        Register exactly one face under the employee's assigned name.
+      operationId: upload_employee_face_employees__employee_id__face_post
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Body_upload_employee_face_employees__employee_id__face_post'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    put:
+      tags:
+        - Employees
+      summary: Link Employee Face
+      description: |-
+        **Access:** Admin role required.
+
+        Link a registered face, explicitly renaming a differently named library.
+      operationId: link_employee_face_employees__employee_id__face_put
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeFaceBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}/controllers/{controller_id}/doors:
+    put:
+      tags:
+        - Employees
+      summary: Set Employee Doors
+      description: |-
+        **Access:** Admin role required.
+
+        Replace one controller's imported grants with a local door list.
+      operationId: 
+        set_employee_doors_employees__employee_id__controllers__controller_id__doors_put
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+        - name: controller_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Controller Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeDoorsBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    delete:
+      tags:
+        - Employees
+      summary: Restore Employee Doors
+      description: |-
+        **Access:** Admin role required.
+
+        Resume synchronization for this employee and controller.
+      operationId: 
+        restore_employee_doors_employees__employee_id__controllers__controller_id__doors_delete
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+        - name: controller_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Controller Id
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employees/{employee_id}/sources:
+    post:
+      tags:
+        - Employees
+      summary: Link Controller Sources
+      description: |-
+        **Access:** Admin role required.
+
+        Explicitly link imported records to the surviving employee account.
+      operationId: link_controller_sources_employees__employee_id__sources_post
+      parameters:
+        - name: employee_id
+          in: path
+          required: true
+          schema:
+            type: string
+            title: Employee Id
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeLinkBody'
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employee-access/settings:
+    get:
+      tags:
+        - Employees
+      summary: Get Employee Settings
+      description: |-
+        **Access:** Admin role required.
+
+        Read the persisted switch and directory synchronization health.
+      operationId: get_employee_settings_employee_access_settings_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+    put:
+      tags:
+        - Employees
+      summary: Set Employee Settings
+      description: |-
+        **Access:** Admin role required.
+
+        Change only cardless access and invalidate pending verifications.
+      operationId: set_employee_settings_employee_access_settings_put
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeEnabledBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employee-access/sync:
+    post:
+      tags:
+        - Employees
+      summary: Synchronize Employees
+      description: |-
+        **Access:** Admin role required.
+
+        Refresh controller directories without changing local overrides.
+      operationId: synchronize_employees_employee_access_sync_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
+  /employee-access/audit:
+    get:
+      tags:
+        - Employees
+      summary: Employee Access Audit
+      description: |-
+        **Access:** Admin role required.
+
+        Return the latest cardless results to administrators only.
+      operationId: employee_access_audit_employee_access_audit_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateAdminAuth: []
+      x-required-role: admin
   /auth/first_time_login:
     get:
       tags:
@@ -7202,8 +8669,359 @@ paths:
       security:
         - frigateAdminAuth: []
       x-required-role: admin
+  /employee/session:
+    get:
+      tags:
+        - Employee portal
+      summary: Employee Session
+      description: |-
+        **Access:** Public — no authentication required.
+
+        Bootstrap CSRF and return only the logged-in employee's own status.
+      operationId: employee_session_employee_session_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security: []
+      x-required-role: public
+  /employee/login:
+    post:
+      tags:
+        - Employee portal
+      summary: Employee Login
+      description: |-
+        **Access:** Public — no authentication required.
+
+        Authenticate against local employee accounts, never Frigate users.
+      operationId: employee_login_employee_login_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeLoginBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security: []
+      x-required-role: public
+  /employee/logout:
+    post:
+      tags:
+        - Employee portal
+      summary: Employee Logout
+      description: |-
+        **Access:** Authenticated employee. Use the employee portal port, default 8972.
+
+        Revoke employee sessions and clear this portal's cookies.
+      operationId: employee_logout_employee_logout_post
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateEmployeeAuth: []
+      x-required-role: employee
+  /employee/options:
+    get:
+      tags:
+        - Employee portal
+      summary: Employee Options
+      description: |-
+        **Access:** Authenticated employee. Use the employee portal port, default 8972.
+
+        List only granted doors and their currently associated Frigate cameras.
+      operationId: employee_options_employee_options_get
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+      security:
+        - frigateEmployeeAuth: []
+      x-required-role: employee
+  /employee/forgot-card:
+    post:
+      tags:
+        - Employee portal
+      summary: Forgot Card
+      description: |-
+        **Access:** Authenticated employee. Use the employee portal port, default 8972.
+
+        Verify the authenticated employee and automatically request one unlock.
+      operationId: forgot_card_employee_forgot_card_post
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ForgotCardBody'
+        required: true
+      responses:
+        '200':
+          description: Successful Response
+          content:
+            application/json:
+              schema: {}
+        '422':
+          description: Validation Error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HTTPValidationError'
+      security:
+        - frigateEmployeeAuth: []
+      x-required-role: employee
 components:
   schemas:
+    AccessControllerBody:
+      properties:
+        id:
+          type: string
+          maxLength: 30
+          minLength: 1
+          title: Id
+        name:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Name
+        ip_address:
+          type: string
+          maxLength: 45
+          minLength: 1
+          pattern: ^[^/@?#\s]+$
+          title: Ip Address
+        port:
+          type: integer
+          maximum: 65535.0
+          minimum: 1.0
+          title: Port
+          default: 80
+        provider:
+          type: string
+          enum:
+            - cgi
+            - netsdk
+          title: Provider
+          default: cgi
+        sdk_port:
+          type: integer
+          maximum: 65535.0
+          minimum: 1.0
+          title: Sdk Port
+          default: 37777
+        use_https:
+          type: boolean
+          title: Use Https
+          default: false
+        event_api:
+          type: string
+          enum:
+            - eventManager
+            - snapManager
+          title: Event Api
+          default: eventManager
+        username:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Username
+        password:
+          anyOf:
+            - type: string
+              maxLength: 255
+            - type: 'null'
+          title: Password
+        associated_camera:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Associated Camera
+        seconds_before:
+          type: integer
+          maximum: 300.0
+          minimum: 0.0
+          title: Seconds Before
+          default: 10
+        seconds_after:
+          type: integer
+          maximum: 300.0
+          minimum: 0.0
+          title: Seconds After
+          default: 10
+      type: object
+      required:
+        - id
+        - ip_address
+      title: AccessControllerBody
+    AccessControllerUpdateBody:
+      properties:
+        name:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Name
+        ip_address:
+          anyOf:
+            - type: string
+              maxLength: 45
+              pattern: ^[^/@?#\s]+$
+            - type: 'null'
+          title: Ip Address
+        port:
+          anyOf:
+            - type: integer
+              maximum: 65535.0
+              minimum: 1.0
+            - type: 'null'
+          title: Port
+        provider:
+          anyOf:
+            - type: string
+              enum:
+                - cgi
+                - netsdk
+            - type: 'null'
+          title: Provider
+        sdk_port:
+          anyOf:
+            - type: integer
+              maximum: 65535.0
+              minimum: 1.0
+            - type: 'null'
+          title: Sdk Port
+        use_https:
+          anyOf:
+            - type: boolean
+            - type: 'null'
+          title: Use Https
+        event_api:
+          anyOf:
+            - type: string
+              enum:
+                - eventManager
+                - snapManager
+            - type: 'null'
+          title: Event Api
+        username:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Username
+        password:
+          anyOf:
+            - type: string
+              maxLength: 255
+            - type: 'null'
+          title: Password
+        clear_credentials:
+          type: boolean
+          title: Clear Credentials
+          default: false
+        associated_camera:
+          anyOf:
+            - type: string
+              maxLength: 100
+            - type: 'null'
+          title: Associated Camera
+        seconds_before:
+          anyOf:
+            - type: integer
+              maximum: 300.0
+              minimum: 0.0
+            - type: 'null'
+          title: Seconds Before
+        seconds_after:
+          anyOf:
+            - type: integer
+              maximum: 300.0
+              minimum: 0.0
+            - type: 'null'
+          title: Seconds After
+      type: object
+      title: AccessControllerUpdateBody
+    AccessEventHistoryBody:
+      properties:
+        device_id:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Device Id
+        start:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          title: Start
+        end:
+          anyOf:
+            - type: string
+              format: date-time
+            - type: 'null'
+          title: End
+        timezone:
+          anyOf:
+            - type: string
+            - type: 'null'
+          title: Timezone
+        count:
+          type: integer
+          maximum: 1024.0
+          minimum: 1.0
+          title: Count
+          default: 500
+      type: object
+      title: AccessEventHistoryBody
+      description: Controller and time bounds for an on-demand history import.
+    AccessEventReviewBody:
+      properties:
+        action:
+          type: string
+          enum:
+            - confirm
+            - correct
+          title: Action
+        classification:
+          anyOf:
+            - type: string
+              enum:
+                - valid
+                - warning
+                - unknown
+            - type: 'null'
+          title: Classification
+        expected_revision:
+          type: integer
+          minimum: 0.0
+          title: Expected Revision
+      additionalProperties: false
+      type: object
+      required:
+        - action
+        - expected_revision
+      title: AccessEventReviewBody
+      description: A revision-bound confirmation or correction by an 
+        administrator.
     AppConfigSetBody:
       properties:
         requires_restart:
@@ -7460,6 +9278,16 @@ components:
       required:
         - file
       title: Body_register_face_faces__name__register_post
+    Body_upload_employee_face_employees__employee_id__face_post:
+      properties:
+        file:
+          type: string
+          format: binary
+          title: File
+      type: object
+      required:
+        - file
+      title: Body_upload_employee_face_employees__employee_id__face_post
     CameraSetBody:
       properties:
         value:
@@ -7688,6 +9516,126 @@ components:
       required:
         - ids
       title: DeleteFaceImagesBody
+    EmployeeBody:
+      properties:
+        name:
+          type: string
+          maxLength: 50
+          minLength: 1
+          title: Name
+        username:
+          anyOf:
+            - type: string
+              maxLength: 64
+            - type: 'null'
+          title: Username
+        password:
+          anyOf:
+            - type: string
+              maxLength: 1024
+            - type: 'null'
+          title: Password
+        enabled:
+          type: boolean
+          title: Enabled
+          default: true
+      additionalProperties: false
+      type: object
+      required:
+        - name
+      title: EmployeeBody
+      description: Account details; passwords are accepted only when being 
+        changed.
+    EmployeeDoorsBody:
+      properties:
+        doors:
+          items:
+            type: string
+          type: array
+          maxItems: 256
+          title: Doors
+      additionalProperties: false
+      type: object
+      required:
+        - doors
+      title: EmployeeDoorsBody
+      description: A local replacement for imported door permissions.
+    EmployeeEnabledBody:
+      properties:
+        enabled:
+          type: boolean
+          title: Enabled
+      additionalProperties: false
+      type: object
+      required:
+        - enabled
+      title: EmployeeEnabledBody
+      description: An explicit enable or disable operation.
+    EmployeeFaceBody:
+      properties:
+        face_name:
+          type: string
+          maxLength: 50
+          minLength: 1
+          title: Face Name
+        rename:
+          type: boolean
+          title: Rename
+          default: false
+      additionalProperties: false
+      type: object
+      required:
+        - face_name
+      title: EmployeeFaceBody
+      description: An existing face, explicitly renamed when its label differs.
+    EmployeeLinkBody:
+      properties:
+        source_ids:
+          items:
+            type: string
+          type: array
+          maxItems: 256
+          minItems: 1
+          title: Source Ids
+      additionalProperties: false
+      type: object
+      required:
+        - source_ids
+      title: EmployeeLinkBody
+      description: Link controller records to the selected surviving account.
+    EmployeeLoginBody:
+      properties:
+        username:
+          type: string
+          maxLength: 64
+          minLength: 1
+          title: Username
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 1
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+        - username
+        - password
+      title: EmployeeLoginBody
+      description: Employee credentials, accepted only by the employee login 
+        endpoint.
+    EmployeePasswordBody:
+      properties:
+        password:
+          type: string
+          maxLength: 1024
+          minLength: 12
+          title: Password
+      additionalProperties: false
+      type: object
+      required:
+        - password
+      title: EmployeePasswordBody
+      description: An administrator-assigned password.
     EventCreateResponse:
       properties:
         success:
@@ -8317,6 +10265,36 @@ components:
                 "john_doe": ["face1.webp", "face2.jpg"],
                 "jane_smith": ["face3.png"]
             }
+    ForgotCardBody:
+      properties:
+        camera:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Camera
+        controller_id:
+          type: string
+          maxLength: 30
+          minLength: 1
+          title: Controller Id
+        door_id:
+          type: string
+          maxLength: 100
+          minLength: 1
+          title: Door Id
+        request_id:
+          type: string
+          format: uuid
+          title: Request Id
+      additionalProperties: false
+      type: object
+      required:
+        - camera
+        - controller_id
+        - door_id
+        - request_id
+      title: ForgotCardBody
+      description: A door selection, never a client-selected employee identity.
     GenAIProbeBody:
       properties:
         provider:
@@ -8906,6 +10884,12 @@ components:
         - type
       title: ValidationError
   securitySchemes:
+    frigateEmployeeAuth:
+      type: apiKey
+      in: cookie
+      name: frigate_employee_token
+      description: Employee-only session issued on the separate employee portal.
+        Frigate administrator sessions cannot substitute for this token.
     frigateAdminAuth:
       type: apiKey
       in: cookie

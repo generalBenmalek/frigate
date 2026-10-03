@@ -4,7 +4,46 @@
   "subtitle": "Manage Dahua access controllers and recent access events.",
   "tabs": {
     "controllers": "Access Controllers",
-    "events": "Events"
+    "events": "Events",
+    "review": "Review"
+  },
+  "review": {
+    "classification": "Classification",
+    "reviewState": "Review state",
+    "reviewed": "Reviewed",
+    "unreviewed": "Unreviewed",
+    "camera": "Camera",
+    "source": "Source",
+    "sources": {
+      "controller": "Controller",
+      "employee_portal": "Employee portal"
+    },
+    "doorId": "Door ID",
+    "decision": "Review decision",
+    "machineStatus": "Machine classification",
+    "finalStatus": "Final classification",
+    "reviewedBy": "Reviewed by",
+    "reviewedAt": "Reviewed at",
+    "confirm": "Confirm machine status",
+    "submit": "Submit review",
+    "saving": "Saving...",
+    "processing": "Processing",
+    "history": "Review history",
+    "transition": "{{previous}} to {{status}}",
+    "historyFailed": "Could not load review history",
+    "actions": {
+      "confirm": "Confirmed",
+      "correct": "Corrected"
+    },
+    "conflict": "This event was reviewed by another administrator. The latest decision has been loaded.",
+    "notReady": "This event is still being classified. Try again when processing finishes.",
+    "saveFailed": "Could not save the review. Try again.",
+    "loadFailed": "Could not load access reviews.",
+    "empty": "No access grants match these filters.",
+    "pagination_one": "Page {{page}} of {{pages}} · {{count}} event",
+    "pagination_other": "Page {{page}} of {{pages}} · {{count}} events",
+    "previous": "Previous page",
+    "next": "Next page"
   },
   "button": {
     "addController": "Add Access Controller",

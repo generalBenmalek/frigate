@@ -16,14 +16,19 @@ import numpy as np
 import zmq
 from peewee import IntegrityError
 
-from frigate.access_controller_service import build_controller
+from frigate.access_controller_service import build_controller, record_portal_grant
 from frigate.comms.embeddings_updater import SOCKET_REP_REQ
 from frigate.comms.object_detector_signaler import ObjectDetectorSubscriber
 from frigate.const import FACE_DIR
 from frigate.dahua_adapter import DahuaNotSupported, DahuaOperationError
 from frigate.models import (
-    AccessControl, Employee, EmployeeAccessAttempt, EmployeeAccessSettings,
-    EmployeeControllerSync, EmployeeDoorOverride, EmployeeSource,
+    AccessControl,
+    Employee,
+    EmployeeAccessAttempt,
+    EmployeeAccessSettings,
+    EmployeeControllerSync,
+    EmployeeDoorOverride,
+    EmployeeSource,
 )
 from frigate.util.image import UntrackedSharedMemory
 from frigate.util.object import create_tensor_input
@@ -390,6 +395,7 @@ class EmployeeService:
                 self.active.discard(employee.id)
                 raise EmployeeAccessError("request_conflict", 409) from err
         score = None
+        granted_at = None
         result = {"success": False, "reason": "operation_interrupted", "door_command": "not_sent"}
         try:
             async with self.policy_lock:
@@ -485,6 +491,7 @@ class EmployeeService:
                     command = await asyncio.wait_for(controller.open_door_async(door_id), timeout=5)
                     if command.get("accepted") is not True:
                         raise EmployeeAccessError("door_command_failed", 502)
+                    granted_at = time.time()
                     result = {"success": True, "identity_verified": True, "reason": "verified", "door_command": "accepted"}
                 break
             else:
@@ -501,7 +508,13 @@ class EmployeeService:
             result = {**result, "success": False, "reason": "verification_failed"}
         finally:
             self.active.discard(employee.id)
-            await asyncio.shield(asyncio.to_thread(EmployeeAccessAttempt.update(
-                status="complete", result=result, score=score,
-            ).where(EmployeeAccessAttempt.id == request_id).execute))
+            if result.get("success") and granted_at is not None:
+                await asyncio.shield(record_portal_grant(
+                    current, current_device, door_id, request_id,
+                    granted_at, result, score,
+                ))
+            else:
+                await asyncio.shield(asyncio.to_thread(EmployeeAccessAttempt.update(
+                    status="complete", result=result, score=score,
+                ).where(EmployeeAccessAttempt.id == request_id).execute))
         return {**result, "request_id": request_id}

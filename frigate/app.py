@@ -59,6 +59,7 @@ from frigate.log import _stop_logging
 from frigate.models import (
     AccessControl,
     AccessEvent,
+    AccessEventReview,
     Employee,
     EmployeeSource,
     EmployeeDoorOverride,
@@ -281,6 +282,7 @@ class FrigateApp:
         )
         models = [
             AccessEvent,
+            AccessEventReview,
             Employee,
             EmployeeSource,
             EmployeeDoorOverride,

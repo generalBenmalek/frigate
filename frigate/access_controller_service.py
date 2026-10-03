@@ -23,10 +23,14 @@ from frigate.access_controller_verification import (
     merge_people,
     save_snapshot,
 )
+from frigate.access_event_review import access_event_transaction
 from frigate.dahua_adapter import DahuaAccessController
 from frigate.models import (
     AccessControl,
     AccessEvent,
+    Employee,
+    EmployeeAccessAttempt,
+    EmployeeSource,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +91,16 @@ def serialize_access_event(event: AccessEvent, device_name: str | None = None) -
         "timestamp": event.occurred_at, "card_number": event.card_number,
         "owner_names": event.raw_record.get("_owner_names") or DahuaAccessController.record_names(raw),
         "verification_status": event.verification_status, "people": event.people,
+        "machine_status": event.verification_status,
+        "effective_status": event.review_status or event.verification_status,
+        "review_status": event.review_status,
+        "reviewed": event.review_status is not None,
+        "reviewed_at": event.reviewed_at,
+        "reviewed_by": event.reviewed_by,
+        "review_revision": event.review_revision,
+        "source": event.raw_record.get("_source", "controller"),
+        "employee_id": event.raw_record.get("_employee_id"),
+        "portal_request_id": event.raw_record.get("_portal_request_id"),
         "camera": event.camera,
         "clip_start": start, "clip_end": end,
         "verification_reason": event.raw_record.get("_verification_reason"),
@@ -104,6 +118,67 @@ def serialize_access_event(event: AccessEvent, device_name: str | None = None) -
 def _publish_event(event: AccessEvent, device_name: str | None = None) -> None:
     if _publisher is not None:
         _publisher("access_controller_events", json.dumps(serialize_access_event(event, device_name)))
+
+
+def publish_access_event(event_id: str) -> None:
+    """Publish committed event state, including its current human decision."""
+    event = AccessEvent.get_by_id(event_id)
+    device = AccessControl.get_or_none(AccessControl.id == event.device_id)
+    _publish_event(event, device.name if device else None)
+
+
+def _persist_portal_grant(
+    employee: Employee, device: AccessControl, door_id: str, request_id: str,
+    occurred_at: float, result: dict, score: float | None,
+) -> str:
+    """Commit one synthetic grant and its completed attempt atomically."""
+    event_id = hashlib.sha256(f"employee-portal:{request_id}".encode()).hexdigest()
+    with access_event_transaction() as database:
+        user_ids = {
+            source.user_id for source in EmployeeSource.select().where(
+                (EmployeeSource.employee_id == employee.id)
+                & (EmployeeSource.controller_id == device.id)
+                & EmployeeSource.active & ~EmployeeSource.suppressed
+            ).bind(database)
+        }
+        user_id = next(iter(user_ids)) if len(user_ids) == 1 else employee.id
+        raw = {
+            "event_code": "AccessControl", "timestamp": occurred_at,
+            "user_id": user_id, "user_name": employee.name,
+            "door_id": door_id, "status": "OK", "access_status": 1,
+            "type": "Entry", "verify_mode": "Camera", "error_code": 0,
+            "_source": "employee_portal", "_employee_id": employee.id,
+            "_portal_request_id": request_id,
+            "_owner_names": [employee.name], "_owner_names_complete": True,
+            "_owner_names_resolved": True, "_live_received_at": occurred_at,
+            "_verification_time": occurred_at,
+        }
+        AccessEvent.insert(
+            id=event_id, device_id=device.id, occurred_at=occurred_at,
+            raw_record=raw, camera=device.associated_camera,
+            seconds_before=device.seconds_before, seconds_after=device.seconds_after,
+            verification_status="pending", people=[],
+        ).on_conflict_ignore().bind(database).execute()
+        updated = EmployeeAccessAttempt.update(
+            status="complete", result=result, score=score,
+        ).where(EmployeeAccessAttempt.id == request_id).bind(database).execute()
+        if updated != 1:
+            raise EmployeeAccessAttempt.DoesNotExist()
+    return event_id
+
+
+async def record_portal_grant(
+    employee: Employee, device: AccessControl, door_id: str, request_id: str,
+    occurred_at: float, result: dict, score: float | None,
+) -> None:
+    """Record and publish accepted cardless access using normal camera evidence."""
+    event_id = await asyncio.to_thread(
+        _persist_portal_grant, employee, device, door_id, request_id,
+        occurred_at, result, score,
+    )
+    await asyncio.to_thread(publish_access_event, event_id)
+    if event_id not in _capture_tasks:
+        _capture_tasks[event_id] = asyncio.create_task(_enrich_live_scan(event_id))
 
 
 def probe_device_with_info(device: AccessControl) -> tuple[AccessControl, dict | None]:

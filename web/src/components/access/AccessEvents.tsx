@@ -178,7 +178,9 @@ export default function AccessEvents({
             <div><dt className="text-sm text-muted-foreground">{t("events.table.device")}</dt><dd>{details.device_name || details.device_id}</dd></div>
             <div><dt className="text-sm text-muted-foreground">{t("events.table.owners")}</dt><dd>{details.owner_names?.join(", ") || "-"}</dd></div>
             <div><dt className="text-sm text-muted-foreground">{t("events.table.people")}</dt><dd>{details.people?.map((person) => person.name).join(", ") || "-"}</dd></div>
-            <div><dt className="text-sm text-muted-foreground">{t("events.table.verification")}</dt><dd className={verificationClasses[details.verification_status ?? "unverified"]}>{t(`verification.${details.verification_status ?? "unverified"}`)}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("events.table.verification")}</dt><dd className={verificationClasses[details.effective_status ?? details.verification_status ?? "unverified"]}>{t(`verification.${details.effective_status ?? details.verification_status ?? "unverified"}`)}</dd></div>
+            <div><dt className="text-sm text-muted-foreground">{t("review.source")}</dt><dd>{t(`review.sources.${details.source ?? "controller"}`)}</dd></div>
+            {details.reviewed && <div><dt className="text-sm text-muted-foreground">{t("review.reviewedBy")}</dt><dd>{details.reviewed_by}</dd></div>}
           </dl>
           {details.verification_reason && <p className="text-sm text-muted-foreground">{t(`verification.reasons.${details.verification_reason}`)}</p>}
           {!!details.verification_sources?.length && <p className="text-sm text-muted-foreground">{t("verification.evidence", {

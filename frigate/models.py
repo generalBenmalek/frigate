@@ -341,9 +341,29 @@ class AccessEvent(Model):
     camera = CharField(max_length=100, null=True)
     seconds_before = IntegerField(default=10)
     seconds_after = IntegerField(default=10)
+    review_status = CharField(max_length=20, null=True)
+    reviewed_at = FloatField(null=True)
+    reviewed_by = CharField(max_length=100, null=True)
+    review_revision = IntegerField(default=0)
 
     class Meta:
         table_name = "access_event"
+
+
+class AccessEventReview(Model):
+    """Append-only human decisions for access events."""
+
+    event_id = CharField(max_length=64, index=True)
+    revision = IntegerField()
+    reviewer = CharField(max_length=100)
+    reviewed_at = FloatField()
+    previous_status = CharField(max_length=20)
+    status = CharField(max_length=20)
+    action = CharField(max_length=20)
+
+    class Meta:
+        table_name = "access_event_review"
+        indexes = ((("event_id", "revision"), True),)
 
 
 class Trigger(Model):

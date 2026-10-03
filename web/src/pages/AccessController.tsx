@@ -6,6 +6,7 @@ import useSWR from "swr";
 import { useAllowedCameras } from "@/hooks/use-allowed-cameras";
 import { useAccessControllerEvents } from "@/hooks/use-access-controller-events";
 import AccessEvents from "@/components/access/AccessEvents";
+import AccessReview from "@/components/access/AccessReview";
 import AccessEventFootage from "@/components/access/AccessEventFootage";
 import { emptyAccessEventFilters, type AccessEvent as EventRecord, type AccessEventFilters } from "@/types/accessController";
 import { accessFilterTimestamp } from "@/utils/accessController";
@@ -129,7 +130,7 @@ function getLiveStatus(device: AccessControllerRecord) {
 
 export default function AccessControllerPage() {
   const { t } = useTranslation(["common", "views/organization"]);
-  const [activeTab, setActiveTab] = useState<"controllers" | "events">("controllers");
+  const [activeTab, setActiveTab] = useState<"controllers" | "events" | "review">("controllers");
   const [selectedDeviceId, setSelectedDeviceId] = useState<string>("all");
   const [draftFilters, setDraftFilters] = useState<AccessEventFilters>({ ...emptyAccessEventFilters });
   const [appliedFilters, setAppliedFilters] = useState<AccessEventFilters>({ ...emptyAccessEventFilters });
@@ -352,7 +353,7 @@ export default function AccessControllerPage() {
 
         <Tabs
           value={activeTab}
-          onValueChange={(value) => setActiveTab(value as "controllers" | "events")}
+          onValueChange={(value) => setActiveTab(value as "controllers" | "events" | "review")}
           className="space-y-4"
         >
           <TabsList>
@@ -361,6 +362,9 @@ export default function AccessControllerPage() {
             </TabsTrigger>
             <TabsTrigger value="events">
               {t("tabs.events", { ns: "views/organization" })}
+            </TabsTrigger>
+            <TabsTrigger value="review">
+              {t("tabs.review", { ns: "views/organization" })}
             </TabsTrigger>
           </TabsList>
 
@@ -476,6 +480,10 @@ export default function AccessControllerPage() {
             </div>
           </TabsContent>
 
+          <TabsContent value="review" className="space-y-4">
+            <AccessReview controllers={deviceList} cameras={cameraOptions}
+              timezone={timezone} onViewFootage={setFootageEvent} />
+          </TabsContent>
           <TabsContent value="events" className="space-y-4">
             <AccessEvents events={events} controllers={deviceList} deviceId={selectedDeviceId}
               onDeviceChange={(id) => { setSelectedDeviceId(id); setSelectedEventId(null); }}

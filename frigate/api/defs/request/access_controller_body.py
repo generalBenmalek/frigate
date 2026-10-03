@@ -1,7 +1,23 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class AccessEventReviewBody(BaseModel):
+    """A revision-bound confirmation or correction by an administrator."""
+
+    model_config = ConfigDict(extra="forbid")
+    action: Literal["confirm", "correct"]
+    classification: Literal["valid", "warning", "unknown"] | None = None
+    expected_revision: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_action(self):
+        """Require a classification only when correcting the machine result."""
+        if (self.action == "correct") != (self.classification is not None):
+            raise ValueError("Classification is required only for corrections")
+        return self
 
 
 class AccessEventHistoryBody(BaseModel):
@@ -32,9 +48,7 @@ class AccessControllerBody(BaseModel):
 
 class AccessControllerUpdateBody(BaseModel):
     name: str | None = Field(default=None, max_length=100)
-    ip_address: str | None = Field(
-        default=None, max_length=45, pattern=r"^[^/@?#\s]+$"
-    )
+    ip_address: str | None = Field(default=None, max_length=45, pattern=r"^[^/@?#\s]+$")
     port: int | None = Field(default=None, ge=1, le=65535)
     provider: Literal["cgi", "netsdk"] | None = None
     sdk_port: int | None = Field(default=None, ge=1, le=65535)
