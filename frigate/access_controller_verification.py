@@ -1,4 +1,4 @@
-"""Collect camera identity evidence for controller scans without requiring media."""
+﻿"""Collect camera identity evidence for controller scans without requiring media."""
 
 import base64
 import hashlib
@@ -41,7 +41,7 @@ def known_names(value: Any) -> set[str]:
     return {
         " ".join(name.split()).casefold()
         for name in identity_name(value).split(",")
-        if name.strip().casefold() not in {"", "unknown", "person", "none"}
+        if name.strip().casefold() not in {"", "none"} #, "unknown", "person"
     }
 
 
@@ -64,12 +64,30 @@ def classify_people(owners: list[str], people: list[dict]) -> tuple[str, str]:
     """Require an identified owner; an unidentified bystander is inconclusive."""
     expected = set().union(*(known_names(name) for name in owners))
     observed = set().union(*(known_names(person.get("name")) for person in people))
+
+    logger.info(
+        "classifying people: expected=%s observed=%s",
+        sorted(expected),
+        sorted(observed),
+    )
+
     if not expected:
+        logger.info("classifying people decision: unknown, reason=missing_owner")
         return "unknown", "missing_owner"
     if observed - expected:
+        extra = sorted(observed - expected)
+        logger.info(
+            "classifying people decision: warning, reason=observed - expected = %s",
+            extra,
+        )
         return "warning", "identity_mismatch"
     if expected & observed:
+        logger.info("classifying people decision: valid, reason=owner_matched")
         return "valid", "owner_matched"
+    logger.info(
+        "classifying people decision: unknown, reason=%s",
+        "unrecognized_person" if people else "no_person",
+    )
     return "unknown", "unrecognized_person" if people else "no_person"
 
 
@@ -296,3 +314,4 @@ class CameraEvidence:
             except OSError:
                 continue
         return images
+
